@@ -1,7 +1,5 @@
 #pragma once
 
-#include "osd.h"
-
 // OSD Menu-specific definitions
 #define OSD_MENU_TIMEOUT_US 10000000 // 10 seconds
 

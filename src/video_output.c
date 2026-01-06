@@ -1,7 +1,7 @@
 #include "g_config.h"
 #include "video_output.h"
-#include "v_buf.h"
 #include "dvi.h"
+#include "v_buf.h"
 #include "vga.h"
 
 #ifdef OSD_ENABLE
@@ -16,8 +16,6 @@ int16_t h_visible_area;
 int16_t h_margin;
 int16_t v_visible_area;
 int16_t v_margin;
-
-extern osd_mode_t osd_mode;
 
 void set_video_mode_params(video_mode_t v_mode)
 {
@@ -38,49 +36,6 @@ void set_video_mode_params(video_mode_t v_mode)
     v_margin = 0;
 }
 
-#ifdef OSD_ENABLE
-void set_osd_position()
-{
-  switch (osd_mode.x)
-  {
-  case 0:
-    osd_mode.start_x = (h_visible_area - osd_mode.width / 2) / 2;
-    break;
-
-  default:
-    osd_mode.start_x = osd_mode.x - 1;
-    break;
-  }
-
-  osd_mode.end_x = osd_mode.start_x + osd_mode.width / 2;
-
-  if (osd_mode.end_x > h_visible_area)
-    osd_mode.end_x = h_visible_area;
-
-  switch (osd_mode.y)
-  {
-  case 0:
-    osd_mode.start_y = ((video_mode.v_visible_area - 2 * v_margin) / video_mode.div - osd_mode.height) / 2;
-    break;
-
-  default:
-    osd_mode.start_y = osd_mode.y - 1;
-    break;
-  }
-
-  osd_mode.end_y = osd_mode.start_y + osd_mode.height;
-
-  if (osd_mode.end_y > (video_mode.v_visible_area - 2 * v_margin) / video_mode.div)
-    osd_mode.end_y = (video_mode.v_visible_area - 2 * v_margin) / video_mode.div;
-}
-#endif
-
-void set_scanlines_mode()
-{
-  if (settings.video_out_type == VGA)
-    set_vga_scanlines_mode(settings.scanlines_mode);
-}
-
 void start_video_output(video_out_type_t output_type)
 {
   active_video_output = output_type;
@@ -88,7 +43,7 @@ void start_video_output(video_out_type_t output_type)
   set_video_mode_params(*(video_modes[settings.video_out_mode]));
 
 #ifdef OSD_ENABLE
-  set_osd_position();
+  osd_set_position();
 #endif
 
   switch (output_type)
@@ -121,6 +76,12 @@ void stop_video_output()
   default:
     break;
   }
+}
+
+void set_scanlines_mode()
+{
+  if (settings.video_out_type == VGA)
+    set_vga_scanlines_mode(settings.scanlines_mode);
 }
 
 void draw_welcome_screen(video_mode_t video_mode)
@@ -178,7 +139,7 @@ void draw_welcome_screen_h(video_mode_t video_mode)
   }
 }
 
-const char nosignal[14][114] = {
+const char nosignal[14][115] = {
     "xx      xx      xxxxxx                  xxxxxx      xxxxxx      xxxxxx      xx      xx        xx        xx",
     "xx      xx     xxxxxxxx                xxxxxxxx     xxxxxx     xxxxxxxx     xx      xx       xxxx       xx",
     "xxx     xx    xxx    xxx              xxx    xxx      xx      xxx    xxx    xxx     xx      xxxxxx      xx",
@@ -192,7 +153,8 @@ const char nosignal[14][114] = {
     "xx     xxx    xx      xx              xx      xx      xx      xx      xx    xx     xxx    xx      xx    xx",
     "xx     xxx    xxx    xxx              xxx    xxx      xx      xxx    xxx    xx     xxx    xx      xx    xx",
     "xx      xx     xxxxxxxx                xxxxxxxx     xxxxxx     xxxxxxxx     xx      xx    xx      xx    xxxxxxxxxx",
-    "xx      xx      xxxxxx                  xxxxxx      xxxxxx      xxxxxx      xx      xx    xx      xx    xxxxxxxxxx"};
+    "xx      xx      xxxxxx                  xxxxxx      xxxxxx      xxxxxx      xx      xx    xx      xx    xxxxxxxxxx",
+};
 
 void draw_no_signal(video_mode_t video_mode)
 {
@@ -217,13 +179,13 @@ void draw_no_signal(video_mode_t video_mode)
 
   memset(v_buf, 0, V_BUF_H * V_BUF_W / 2);
 
-  for (int line = 0; line < 14; ++line)
+  for (int row = 0; row < 14; ++row)
     for (int col = 0; col < 114; ++col)
     {
-      c = (nosignal[line][col] == 'x') ? 0b0111 : 0b0000;
+      c = (nosignal[row][col] == 'x') ? 0b0111 : 0b0000;
 
       if (col & 1)
-        v_buf[(y + line) * V_BUF_W / 2 + x + col / 2] = c2 | (c << 4);
+        v_buf[(y + row) * V_BUF_W / 2 + x + col / 2] = c2 | (c << 4);
       else
         c2 = c;
     }

@@ -1,5 +1,3 @@
-#include <stdio.h>
-#include <string.h>
 #include <stdarg.h>
 
 #include "hardware/timer.h"
@@ -21,6 +19,12 @@
 #define REPEAT_DELAY_US 500000  // 500ms initial repeat delay
 #define REPEAT_RATE_US 100000   // 100ms repeat rate
 
+extern video_mode_t video_mode;
+extern int16_t h_visible_area;
+extern int16_t h_margin;
+extern int16_t v_visible_area;
+extern int16_t v_margin;
+
 osd_state_t osd_state = {
     .enabled = false,
     .visible = false,
@@ -39,6 +43,7 @@ osd_mode_t osd_mode = {
     .buffer_size = OSD_BUFFER_SIZE,
     .columns = OSD_COLUMNS,
     .rows = OSD_ROWS,
+    .border_enabled = true,
     .text_buffer_size = OSD_TEXT_BUFFER_SIZE};
 
 uint8_t osd_buffer[OSD_BUFFER_SIZE];
@@ -59,7 +64,7 @@ void osd_init()
     osd_clear_text_buffer();
     // Clear overlay buffer
     osd_clear_buffer();
-    
+
     // Initialize buttons
     osd_buttons_init();
 
@@ -67,6 +72,41 @@ void osd_init()
     // Initialize menu-specific components
     osd_menu_init();
 #endif
+}
+
+void osd_set_position()
+{
+    switch (osd_mode.x)
+    {
+    case 0:
+        osd_mode.start_x = (h_visible_area - osd_mode.width / 2) / 2;
+        break;
+
+    default:
+        osd_mode.start_x = osd_mode.x - 1;
+        break;
+    }
+
+    osd_mode.end_x = osd_mode.start_x + osd_mode.width / 2;
+
+    if (osd_mode.end_x > h_visible_area)
+        osd_mode.end_x = h_visible_area;
+
+    switch (osd_mode.y)
+    {
+    case 0:
+        osd_mode.start_y = ((video_mode.v_visible_area - 2 * v_margin) / video_mode.div - osd_mode.height) / 2;
+        break;
+
+    default:
+        osd_mode.start_y = osd_mode.y - 1;
+        break;
+    }
+
+    osd_mode.end_y = osd_mode.start_y + osd_mode.height;
+
+    if (osd_mode.end_y > (video_mode.v_visible_area - 2 * v_margin) / video_mode.div)
+        osd_mode.end_y = (video_mode.v_visible_area - 2 * v_margin) / video_mode.div;
 }
 
 void osd_show()
@@ -108,8 +148,9 @@ void osd_clear_text_buffer()
         for (uint8_t col = 0; col < osd_mode.columns; col++)
         {
             uint16_t pos = row * osd_mode.columns + col;
-            // Skip border positions (first and last row, first and last column)
-            if (row == 0 || row == osd_mode.rows - 1 || col == 0 || col == osd_mode.columns - 1)
+            // Skip border positions (first and last row, first and last column) only if borders are enabled
+            if (osd_mode.border_enabled &&
+                (row == 0 || row == osd_mode.rows - 1 || col == 0 || col == osd_mode.columns - 1))
                 continue;
 
             osd_text_buffer[pos] = ' ';
@@ -141,22 +182,29 @@ void osd_text_print(uint8_t row, uint8_t col, const char *str, uint8_t fg_color,
     uint16_t pos = row_start + col;
     uint8_t max_len = osd_mode.columns - col;
     uint8_t packed_color = (fg_color << 4) | bg_color;
-    // Fill left padding with spaces (avoid column 0 - left border)
-    for (uint8_t i = 1; i < col; i++)
+
+    // Fill left padding with spaces (avoid column 0 only if borders are enabled)
+    uint8_t start_col = osd_mode.border_enabled ? 1 : 0;
+    for (uint8_t i = start_col; i < col; i++)
     {
         osd_text_buffer[row_start + i] = ' ';
         osd_text_colors[row_start + i] = packed_color;
     }
 
     uint8_t i;
-    // Copy string characters (avoid last column - right border)
-    uint8_t effective_max_len = (col + max_len >= osd_mode.columns) ? (osd_mode.columns - col - 1) : max_len;
+    // Copy string characters (avoid last column only if borders are enabled)
+    uint8_t effective_max_len;
+    if (osd_mode.border_enabled)
+        effective_max_len = (col + max_len >= osd_mode.columns) ? (osd_mode.columns - col - 1) : max_len;
+    else
+        effective_max_len = max_len;
+
     for (i = 0; i < effective_max_len && str[i] != '\0'; i++)
     {
         osd_text_buffer[pos + i] = str[i];
         osd_text_colors[pos + i] = packed_color;
     }
-    // Pad with spaces to fill the rest of the row (avoid last column - right border)
+    // Pad with spaces to fill the rest of the row
     for (; i < effective_max_len; i++)
     {
         osd_text_buffer[pos + i] = ' ';
@@ -170,16 +218,18 @@ void osd_text_print_centered(uint8_t row, const char *str, uint8_t fg_color, uin
         return;
 
     uint8_t len = strlen(str);
-    // Account for border columns (exclude first and last column)
-    uint8_t available_width = osd_mode.columns - 2;
+    // Account for border columns only if borders are enabled
+    uint8_t available_width = osd_mode.border_enabled ? (osd_mode.columns - 2) : osd_mode.columns;
     if (len > available_width)
         len = available_width;
 
-    uint8_t col = 1 + (available_width - len) / 2; // Start at column 1 (after left border)
+    uint8_t start_col = osd_mode.border_enabled ? 1 : 0;
+    uint8_t col = start_col + (available_width - len) / 2;
     uint8_t packed_color = (fg_color << 4) | bg_color;
     uint16_t pos = row * osd_mode.columns;
-    // Fill left padding with spaces (start at column 1 to preserve left border)
-    for (uint8_t i = 1; i < col; i++)
+
+    // Fill left padding with spaces (start after border if enabled)
+    for (uint8_t i = start_col; i < col; i++)
     {
         osd_text_buffer[pos + i] = ' ';
         osd_text_colors[pos + i] = packed_color;
@@ -203,7 +253,11 @@ void osd_text_printf(uint8_t row, uint8_t col, uint8_t fg_color, uint8_t bg_colo
 }
 
 void osd_draw_border()
-{ // Top border
+{
+    if (!osd_mode.border_enabled)
+        return;
+
+    // Top border
     osd_text_set_char(0, 0, OSD_CHAR_BORDER_TL, OSD_COLOR_BORDER, OSD_COLOR_BACKGROUND);
 
     for (uint8_t col = 1; col < osd_mode.columns - 1; col++)
@@ -388,7 +442,7 @@ void osd_buttons_update()
                     extern void stop_video_output();
                     extern void start_video_output(video_out_type_t);
                     extern void set_capture_frequency(uint32_t);
-                    
+
                     video_out_type_t new_type = (settings.video_out_type == DVI) ? VGA : DVI;
                     settings.video_out_type = new_type;
                     settings.video_out_mode = VIDEO_OUT_MODE_DEF;

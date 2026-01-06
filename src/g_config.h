@@ -1,15 +1,15 @@
 #pragma once
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include "inttypes.h"
-#include "stdbool.h"
+#include <inttypes.h>
+#include <stdbool.h>
 
 #include "pico.h"
 #include "pico/time.h"
 
-#define FW_VERSION "v1.6.0-PICO-SDK"
+#define FW_VERSION "v1.7.0-PICO-SDK"
 #define BOARD_CODE_36LJU22
 // #define BOARD_CODE_09LJV23
 
@@ -42,6 +42,15 @@ typedef enum cap_sync_mode_t
   SYNC_MODE_MAX = EXT,
 } cap_sync_mode_t;
 
+#ifdef OSD_FF_ENABLE
+typedef struct ff_osd_config_t
+{
+  uint16_t cols;
+  uint16_t rows;
+  bool i2c_protocol : 1; // false = LCD_HD44780, true = FlashFloppy
+} ff_osd_config_t;
+#endif
+
 typedef struct settings_t
 {
   video_out_type_t video_out_type;
@@ -56,6 +65,9 @@ typedef struct settings_t
   int16_t shX;
   int16_t shY;
   uint8_t pin_inversion_mask;
+#ifdef OSD_FF_ENABLE
+  ff_osd_config_t ff_osd_config;
+#endif
 } settings_t;
 
 typedef struct video_mode_t

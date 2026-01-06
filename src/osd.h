@@ -1,8 +1,5 @@
 #pragma once
 
-#include <stdint.h>
-#include <stdbool.h>
-
 // OSD dimensions
 #define OSD_WIDTH 320
 #define OSD_HEIGHT 120
@@ -38,6 +35,7 @@ typedef struct
     uint16_t buffer_size;
     uint8_t rows;
     uint8_t columns;
+    bool border_enabled;
     uint16_t text_buffer_size;
 } osd_mode_t;
 
@@ -74,6 +72,7 @@ extern uint8_t osd_text_heights[OSD_ROWS];            // 0 = normal height, 1 = 
 
 void osd_init();
 void osd_update(); // Main update function - handles both menu and FF OSD
+void osd_set_position();
 void osd_show();
 void osd_hide();
 void osd_update_activity();

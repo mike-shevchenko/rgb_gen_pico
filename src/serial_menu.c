@@ -1,29 +1,18 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdlib.h>
-
 #include "pico/stdio.h"
-
 #include "hardware/clocks.h"
 #include "hardware/pio.h"
 #include "hardware/watchdog.h"
 
-#include "serial_menu.h"
-
-extern "C"
-{
 #include "g_config.h"
-#include "v_buf.h"
-#include "settings.h"
+#include "serial_menu.h"
 #include "rgb_capture.h"
+#include "settings.h"
+#include "v_buf.h"
 #include "video_output.h"
 
 #ifdef OSD_FF_ENABLE
-#include "osd.h"
 #include "ff_osd.h"
 #endif
-}
 
 // External variables that need to be accessed
 extern settings_t settings;
@@ -231,23 +220,6 @@ void print_pin_inversion_mask_menu()
     printf("  q   exit to main menu\n\n");
 }
 
-#ifdef OSD_FF_ENABLE
-void print_ff_osd_menu()
-{
-    printf("\n      * FlashFloppy OSD configuration *\n\n");
-
-    printf("  i   shift OSD UP\n");
-    printf("  k   shift OSD DOWN\n");
-    printf("  j   shift OSD LEFT\n");
-    printf("  l   shift OSD RIGHT\n");
-    printf("  r   toggle OSD rows (2/4)\n\n");
-
-    printf("  p   show configuration\n");
-    printf("  h   show help (this menu)\n");
-    printf("  q   exit to main menu\n\n");
-}
-#endif
-
 void print_test_menu()
 {
     printf("\n      * Tests *\n\n");
@@ -453,40 +425,46 @@ void print_pin_inversion_mask()
 }
 
 #ifdef OSD_FF_ENABLE
-void print_ff_osd_config()
+void print_ff_osd_menu()
 {
-    printf("  OSD horizontal offset ...... ");
-    printf("%d\n", ff_osd_config.h_offset);
+    printf("\n      * FlashFloppy OSD configuration *\n\n");
 
-    printf("  OSD vertical offset ........ ");
-    printf("%d\n", ff_osd_config.v_offset);
+    printf("  i   change I2C protocol\n");
+    printf("  r   change number of rows (2/4)\n");
+    printf("  a   increment number of columns\n");
+    printf("  z   decrement number of columns\n\n");
 
-    printf("  OSD rows ................... ");
-    printf("%d\n", ff_osd_config.rows);
-
-    printf("  OSD minimum columns ........ ");
-    printf("%d\n", ff_osd_config.min_cols);
-
-    printf("  OSD maximum columns ........ ");
-    printf("%d\n", ff_osd_config.max_cols);
+    printf("  p   show configuration\n");
+    printf("  h   show help (this menu)\n");
+    printf("  q   exit to main menu\n\n");
 }
 
-void print_ff_osd_h_offset()
+void print_ff_osd_i2c_protocol()
 {
-    printf("  OSD horizontal offset ...... ");
-    printf("%d\n", ff_osd_config.h_offset);
-}
-
-void print_ff_osd_v_offset()
-{
-    printf("  OSD vertical offset ........ ");
-    printf("%d\n", ff_osd_config.v_offset);
+    printf("  I2C protocol ............... ");
+    if (settings.ff_osd_config.i2c_protocol)
+        printf("FlashFloppy\n");
+    else
+        printf("LCD HD44780\n");
 }
 
 void print_ff_osd_rows()
 {
-    printf("  OSD rows ................... ");
-    printf("%d\n", ff_osd_config.rows);
+    printf("  Rows ....................... ");
+    printf("%d\n", settings.ff_osd_config.rows);
+}
+
+void print_ff_osd_cols()
+{
+    printf("  Columns .................... ");
+    printf("%d\n", settings.ff_osd_config.cols);
+}
+
+void print_ff_osd_config()
+{
+    print_ff_osd_i2c_protocol();
+    print_ff_osd_rows();
+    print_ff_osd_cols();
 }
 #endif
 
@@ -1181,6 +1159,71 @@ void handle_serial_menu()
             break;
         }
 
+#ifdef OSD_FF_ENABLE
+        case 'g':
+        {
+            inchar = 'h';
+
+            while (1)
+            {
+                if (inchar != 'h')
+                    inchar = get_menu_input(10);
+
+                switch (inchar)
+                {
+                case 'p':
+                    print_ff_osd_config();
+                    break;
+
+                case 'h':
+                    print_ff_osd_menu();
+                    break;
+
+                case 'i':
+                    settings.ff_osd_config.i2c_protocol = !settings.ff_osd_config.i2c_protocol;
+                    print_ff_osd_i2c_protocol();
+                    break;
+
+                case 'r':
+                    if (!settings.ff_osd_config.i2c_protocol)
+                    {
+                        settings.ff_osd_config.rows = (settings.ff_osd_config.rows == 2) ? 4 : 2;
+                        print_ff_osd_rows();
+                    }
+                    break;
+
+                case 'a':
+                    if (!settings.ff_osd_config.i2c_protocol)
+                    {
+                        settings.ff_osd_config.cols = ff_osd_set_cols(settings.ff_osd_config.cols + 1);
+                        print_ff_osd_cols();
+                    }
+                    break;
+                case 'z':
+                    if (!settings.ff_osd_config.i2c_protocol)
+                    {
+                        settings.ff_osd_config.cols = ff_osd_set_cols(settings.ff_osd_config.cols - 1);
+                        print_ff_osd_cols();
+                    }
+                    break;
+
+                default:
+                    break;
+                }
+
+                if (inchar == 'q')
+                {
+                    inchar = 'h';
+                    break;
+                }
+
+                inchar = 0;
+            }
+
+            break;
+        }
+#endif
+
         case 'T':
         {
             inchar = 'h';
@@ -1232,14 +1275,21 @@ void handle_serial_menu()
                 case 'g':
                 {
                     printf("\n      * FF OSD Display Data *\n\n");
-                    printf("  Display on .................. %s\n", ff_osd_display.on ? "Yes" : "No");
-                    printf("  Rows ........................ %d\n", ff_osd_display.rows);
-                    printf("  Cols ........................ %d\n", ff_osd_display.cols);
+                    printf("  Display on .................. ");
+                    printf("%s\n", ff_osd_display.on ? "Yes" : "No");
+                    printf("  Rows ........................ ");
+                    printf("%d\n", ff_osd_display.rows);
+                    printf("  Columns ..................... ");
+                    printf("%d\n", ff_osd_display.cols);
 
                     printf("\n  Text content:\n");
                     for (int row = 0; row < ff_osd_display.rows && row < 4; row++)
                     {
-                        printf("    Row %d: Height bits: %02x \"", row, (ff_osd_display.heights >> row) & 1);
+                        printf("    Row ");
+                        printf("%d", row);
+                        printf(": Height bits: ");
+                        printf("%02x", (ff_osd_display.heights >> row) & 1);
+                        printf("%02x \"");
                         for (int col = 0; col < ff_osd_display.cols && col < 40; col++)
                         {
                             char c = ff_osd_display.text[row][col];
@@ -1267,84 +1317,6 @@ void handle_serial_menu()
 
             break;
         }
-
-#ifdef OSD_FF_ENABLE
-        case 'g':
-        {
-            inchar = 'h';
-
-            while (1)
-            {
-                if (inchar != 'h')
-                    inchar = get_menu_input(10);
-
-                osd_clear_text_buffer();
-                osd_text_print_centered(0, "* FlashFloppy OSD Configuration *", 7, 0, 1);
-                osd_render_text_to_buffer();
-
-                osd_mode.x = ff_osd_config.h_offset;
-                osd_mode.y = ff_osd_config.v_offset;
-                osd_mode.columns = ff_osd_display.cols;
-                osd_mode.rows = ff_osd_config.rows;
-                osd_mode.width = osd_mode.columns * OSD_FONT_WIDTH;
-                osd_mode.height = osd_mode.rows * OSD_FONT_HEIGHT;
-                osd_mode.buffer_size = osd_mode.width * osd_mode.height / 2;
-
-                set_osd_position();
-                osd_state.visible = true; // enable OSD display for configuration
-
-                switch (inchar)
-                {
-                case 'p':
-                    print_ff_osd_config();
-                    break;
-
-                case 'h':
-                    print_ff_osd_menu();
-                    break;
-
-                case 'i':
-                    ff_osd_config.v_offset = set_ff_osd_v_offset(ff_osd_config.v_offset + 1);
-                    print_ff_osd_v_offset();
-                    break;
-
-                case 'k':
-                    ff_osd_config.v_offset = set_ff_osd_v_offset(ff_osd_config.v_offset - 1);
-                    print_ff_osd_v_offset();
-                    break;
-
-                case 'j':
-                    ff_osd_config.h_offset = set_ff_osd_h_offset(ff_osd_config.h_offset - 1);
-                    print_ff_osd_h_offset();
-                    break;
-
-                case 'l':
-                    ff_osd_config.h_offset = set_ff_osd_h_offset(ff_osd_config.h_offset + 1);
-                    print_ff_osd_h_offset();
-                    break;
-
-                case 'r':
-                    ff_osd_config.rows = (ff_osd_config.rows == 2) ? 4 : 2;
-                    print_ff_osd_rows();
-                    break;
-
-                default:
-                    break;
-                }
-
-                if (inchar == 'q')
-                {
-                    osd_state.visible = false; // restore OSD state
-                    inchar = 'h';
-                    break;
-                }
-
-                inchar = 0;
-            }
-
-            break;
-        }
-#endif
 
         case 'h':
             print_main_menu();

@@ -1,13 +1,9 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
 
 #include "g_config.h"
-#include "osd.h"
 #include "osd_menu.h"
+#include "osd.h"
 #include "rgb_capture.h"
 #include "settings.h"
 #include "video_output.h"
@@ -68,11 +64,12 @@ void osd_menu_update()
         osd_mode.y = 0;
         osd_mode.columns = 30;
         osd_mode.rows = 15;
+        osd_mode.border_enabled = true;
         osd_mode.width = osd_mode.columns * OSD_FONT_WIDTH;
         osd_mode.height = osd_mode.rows * OSD_FONT_HEIGHT;
         osd_mode.buffer_size = osd_mode.width * osd_mode.height / 2;
 
-        set_osd_position();
+        osd_set_position();
 
         osd_show();
         // Don't process the button press that opened the menu

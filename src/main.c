@@ -1,22 +1,12 @@
-#include <stdio.h>
-#include <string>
-#include <cstring>
-
-#include "pico.h"
-#include "pico/time.h"
+#include "pico/multicore.h"
+#include "pico/stdio_usb.h"
+#include "pico/stdlib.h"
+#include "hardware/clocks.h"
 #include "hardware/vreg.h"
 
-#include "pico/multicore.h"
-#include "pico/stdlib.h"
-#include "pico/stdio_usb.h"
-#include "hardware/clocks.h"
-
-#include "serial_menu.h"
-
-extern "C"
-{
 #include "g_config.h"
 #include "rgb_capture.h"
+#include "serial_menu.h"
 #include "settings.h"
 #include "v_buf.h"
 #include "video_output.h"
@@ -32,7 +22,6 @@ extern "C"
 #ifdef OSD_FF_ENABLE
 #include "ff_osd.h"
 #endif
-}
 
 #define PIN_LED (25u)
 
@@ -92,12 +81,12 @@ void __attribute__((weak)) setup1()
   gpio_set_dir(PIN_LED, GPIO_OUT);
   gpio_put(PIN_LED, 0);
 
+  while (!start_core0)
+    sleep_ms(10);
+
 #ifdef OSD_FF_ENABLE
   ff_osd_i2c_init();
 #endif
-
-  while (!start_core0)
-    sleep_ms(10);
 
   start_capture();
 }

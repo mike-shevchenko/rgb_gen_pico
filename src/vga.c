@@ -11,7 +11,6 @@
 
 #ifdef OSD_ENABLE
 #include "osd.h"
-extern osd_mode_t osd_mode;
 #endif
 
 // sync pulse patterns (positive polarity)
@@ -31,6 +30,7 @@ extern int16_t h_visible_area;
 extern int16_t h_margin;
 extern int16_t v_visible_area;
 extern int16_t v_margin;
+
 static bool scanlines_mode = false;
 
 static uint32_t *v_out_dma_buf[4];

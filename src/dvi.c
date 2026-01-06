@@ -11,7 +11,6 @@
 
 #ifdef OSD_ENABLE
 #include "osd.h"
-extern osd_mode_t osd_mode;
 #endif
 
 extern settings_t settings;
