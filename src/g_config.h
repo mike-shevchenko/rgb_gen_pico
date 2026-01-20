@@ -142,7 +142,7 @@ extern uint8_t g_v_buf[];
 #define VIDEO_OUT_TYPE_MAX OUTPUT_TYPE_MAX
 #define VIDEO_OUT_MODE_MAX VIDEO_MODE_MAX
 #define CAP_SYNC_MODE_MAX SYNC_MODE_MAX
-#define FREQUENCY_MAX 8000000
+#define FREQUENCY_MAX 16000000
 #define EXT_CLK_DIVIDER_MAX 5
 #define DELAY_MAX 31
 #define shX_MAX 200
@@ -169,6 +169,16 @@ extern uint8_t g_v_buf[];
 #define V_BUF_W (ACTIVE_VIDEO_TIME * (FREQUENCY_MAX / 1000000))
 #define V_BUF_H 304
 #define V_BUF_SZ (V_BUF_H * V_BUF_W / 2)
+
+#define HIRES_ENABLE
+
+#ifdef HIRES_ENABLE
+#define V_BUF_NUM 1
+#define H_RES 2
+#else
+#define V_BUF_NUM 3
+#define H_RES 1
+#endif
 
 // enable scanlines on 640x480 and 800x600 resolutions
 // not enabled due to reduced image brightness and uneven line thickness caused by monitor scaler

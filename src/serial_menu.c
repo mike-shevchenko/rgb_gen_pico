@@ -59,7 +59,9 @@ void print_main_menu()
     if (settings.video_out_type == VGA)
         printf("  s   set scanlines mode\n");
 
+#ifndef HIRES_ENABLE
     printf("  b   set buffering mode\n");
+#endif
     printf("  c   set capture synchronization source\n");
     printf("  f   set capture frequency\n");
     printf("  d   set external clock divider\n");
@@ -125,7 +127,7 @@ void print_scanlines_mode_menu()
     printf("  h   show help (this menu)\n");
     printf("  q   exit to main menu\n\n");
 }
-
+#ifndef HIRES_ENABLE
 void print_buffering_mode_menu()
 {
     printf("\n      * Buffering mode *\n\n");
@@ -136,7 +138,7 @@ void print_buffering_mode_menu()
     printf("  h   show help (this menu)\n");
     printf("  q   exit to main menu\n\n");
 }
-
+#endif
 void print_cap_sync_mode_menu()
 {
     printf("\n      * Capture synchronization source *\n\n");
@@ -290,7 +292,7 @@ void print_scanlines_mode()
     else
         printf("disabled\n");
 }
-
+#ifndef HIRES_ENABLE
 void print_buffering_mode()
 {
     printf("  Buffering mode .............. ");
@@ -300,7 +302,7 @@ void print_buffering_mode()
     else
         printf("x1\n");
 }
-
+#endif
 void print_cap_sync_mode()
 {
     printf("  Capture sync source ......... ");
@@ -423,7 +425,9 @@ void print_settings()
     if (settings.video_out_type == VGA)
         print_scanlines_mode();
 
+#ifndef HIRES_ENABLE
     print_buffering_mode();
+#endif
     print_cap_sync_mode();
     print_capture_frequency();
     print_ext_clk_divider();
@@ -643,7 +647,7 @@ void handle_serial_menu()
 
             break;
         }
-
+#ifndef HIRES_ENABLE
         case 'b':
         {
             inchar = 'h';
@@ -684,7 +688,7 @@ void handle_serial_menu()
 
             break;
         }
-
+#endif
         case 'c':
         {
             inchar = 'h';
@@ -778,7 +782,7 @@ void handle_serial_menu()
                     {
                         inchar = get_menu_input(10);
 
-                        if (inchar >= '0' && inchar <= '9' && str_len < 7)
+                        if (inchar >= '0' && inchar <= '9' && str_len < 8)
                         {
                             printf("%c", inchar);
                             frequency_str[str_len++] = inchar;

@@ -51,7 +51,7 @@ void set_scanlines_mode()
 
 void draw_welcome_screen(video_mode_t video_mode)
 {
-  int16_t h_visible_area = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 4;
+  int16_t h_visible_area = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 4 * H_RES;
   int16_t h_margin = h_visible_area - (uint8_t)(settings.frequency / 1000000) * ACTIVE_VIDEO_TIME;
 
   if (h_margin < 0)
@@ -104,29 +104,29 @@ void draw_welcome_screen_h(video_mode_t video_mode)
   }
 }
 
-const char nosignal[14][115] = {
-    "xx      xx      xxxxxx                  xxxxxx      xxxxxx      xxxxxx      xx      xx        xx        xx",
-    "xx      xx     xxxxxxxx                xxxxxxxx     xxxxxx     xxxxxxxx     xx      xx       xxxx       xx",
-    "xxx     xx    xxx    xxx              xxx    xxx      xx      xxx    xxx    xxx     xx      xxxxxx      xx",
-    "xxx     xx    xx      xx              xx      xx      xx      xx      xx    xxx     xx     xxx  xxx     xx",
-    "xxxx    xx    xx      xx              xx              xx      xx            xxxx    xx    xxx    xxx    xx",
-    "xxxxx   xx    xx      xx              xxx             xx      xx            xxxxx   xx    xx      xx    xx",
-    "xx xxx  xx    xx      xx               xxxxxxx        xx      xx            xx xxx  xx    xx      xx    xx",
-    "xx  xxx xx    xx      xx                xxxxxxx       xx      xx    xxxx    xx  xxx xx    xx      xx    xx",
-    "xx   xxxxx    xx      xx                     xxx      xx      xx    xxxx    xx   xxxxx    xxxxxxxxxx    xx",
-    "xx    xxxx    xx      xx                      xx      xx      xx      xx    xx    xxxx    xxxxxxxxxx    xx",
-    "xx     xxx    xx      xx              xx      xx      xx      xx      xx    xx     xxx    xx      xx    xx",
-    "xx     xxx    xxx    xxx              xxx    xxx      xx      xxx    xxx    xx     xxx    xx      xx    xx",
-    "xx      xx     xxxxxxxx                xxxxxxxx     xxxxxx     xxxxxxxx     xx      xx    xx      xx    xxxxxxxxxx",
-    "xx      xx      xxxxxx                  xxxxxx      xxxxxx      xxxxxx      xx      xx    xx      xx    xxxxxxxxxx",
-};
-
 void draw_no_signal(video_mode_t video_mode)
 {
   uint8_t c;
   uint8_t c2;
 
-  int16_t h_visible_area = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 4;
+  const char nosignal[14][115] = {
+      "xx      xx      xxxxxx                  xxxxxx      xxxxxx      xxxxxx      xx      xx        xx        xx",
+      "xx      xx     xxxxxxxx                xxxxxxxx     xxxxxx     xxxxxxxx     xx      xx       xxxx       xx",
+      "xxx     xx    xxx    xxx              xxx    xxx      xx      xxx    xxx    xxx     xx      xxxxxx      xx",
+      "xxx     xx    xx      xx              xx      xx      xx      xx      xx    xxx     xx     xxx  xxx     xx",
+      "xxxx    xx    xx      xx              xx              xx      xx            xxxx    xx    xxx    xxx    xx",
+      "xxxxx   xx    xx      xx              xxx             xx      xx            xxxxx   xx    xx      xx    xx",
+      "xx xxx  xx    xx      xx               xxxxxxx        xx      xx            xx xxx  xx    xx      xx    xx",
+      "xx  xxx xx    xx      xx                xxxxxxx       xx      xx    xxxx    xx  xxx xx    xx      xx    xx",
+      "xx   xxxxx    xx      xx                     xxx      xx      xx    xxxx    xx   xxxxx    xxxxxxxxxx    xx",
+      "xx    xxxx    xx      xx                      xx      xx      xx      xx    xx    xxxx    xxxxxxxxxx    xx",
+      "xx     xxx    xx      xx              xx      xx      xx      xx      xx    xx     xxx    xx      xx    xx",
+      "xx     xxx    xxx    xxx              xxx    xxx      xx      xxx    xxx    xx     xxx    xx      xx    xx",
+      "xx      xx     xxxxxxxx                xxxxxxxx     xxxxxx     xxxxxxxx     xx      xx    xx      xx    xxxxxxxxxx",
+      "xx      xx      xxxxxx                  xxxxxx      xxxxxx      xxxxxx      xx      xx    xx      xx    xxxxxxxxxx",
+  };
+
+  int16_t h_visible_area = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 4 * H_RES;
   int16_t h_margin = h_visible_area - (uint8_t)(settings.frequency / 1000000) * ACTIVE_VIDEO_TIME;
 
   if (h_margin < 0)
@@ -138,20 +138,34 @@ void draw_no_signal(video_mode_t video_mode)
     v_margin = 0;
 
   uint16_t y = (video_mode.v_visible_area - v_margin) / (video_mode.div * 2);
-  uint16_t x = (h_visible_area - h_margin - 114) / 4;
+  uint16_t x = (h_visible_area - h_margin - 114 * H_RES) / 4;
 
   uint8_t *v_buf = (uint8_t *)get_v_buf_out();
 
   memset(v_buf, 0, V_BUF_H * V_BUF_W / 2);
+
+  uint16_t x_pos;
 
   for (int row = 0; row < 14; ++row)
     for (int col = 0; col < 114; ++col)
     {
       c = (nosignal[row][col] == 'x') ? 0b0111 : 0b0000;
 
+#ifdef HIRES_ENABLE
+      for (int v = 0; v < video_mode.div; ++v)
+      {
+        x_pos = x + col + v;
+
+        if (x_pos & 1)
+          v_buf[(y + row) * V_BUF_W / 2 + x + col + (v / 2)] = c2 | (c << 4);
+        else
+          c2 = c;
+      }
+#else
       if (col & 1)
         v_buf[(y + row) * V_BUF_W / 2 + x + col / 2] = c2 | (c << 4);
       else
         c2 = c;
+#endif
     }
 }

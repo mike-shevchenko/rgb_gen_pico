@@ -213,7 +213,11 @@ void osd_update()
         if (osd_menu.current_menu == MENU_TYPE_MAIN)
             max_items = 5; // Main menu: 0-5 (6 items: OUTPUT, CAPTURE, IMAGE ADJUST, ABOUT, SAVE, EXIT)
         else if (osd_menu.current_menu == MENU_TYPE_OUTPUT)
+#ifdef HIRES_ENABLE
+            max_items = 2; // Output menu: 0-2 (3 items: mode, scanlines, back)
+#else
             max_items = 3; // Output menu: 0-3 (4 items: mode, scanlines, buffering, back)
+#endif
         else if (osd_menu.current_menu == MENU_TYPE_CAPTURE)
             max_items = 5; // Capture menu: 0-5 (6 items: freq, mode, divider, sync, mask, back) - divider always shown but dimmed for SELF
         else if (osd_menu.current_menu == MENU_TYPE_IMAGE_ADJUST)
@@ -347,8 +351,12 @@ void osd_update()
                 }
             }
             else if (osd_menu.current_menu == MENU_TYPE_OUTPUT)
-            {                                // Output submenu selection
+            { // Output submenu selection
+#ifdef HIRES_ENABLE
+                uint8_t back_item_index = 2; // 3 items (mode, scanlines, back)
+#else
                 uint8_t back_item_index = 3; // 4 items (mode, scanlines, buffering, back)
+#endif
 
                 if (osd_state.selected_item == back_item_index)
                 { // Back to Main
@@ -407,6 +415,7 @@ void osd_update()
                         osd_state.needs_redraw = true;
                     }
                 }
+#ifndef HIRES_ENABLE
                 else if (osd_state.selected_item == 2)
                 { // Buffering - toggle between X1 and X3
                     settings.buffering_mode = !settings.buffering_mode;
@@ -414,6 +423,7 @@ void osd_update()
                     set_buffering_mode(settings.buffering_mode);
                     osd_state.needs_redraw = true;
                 }
+#endif
             }
             else if (osd_menu.current_menu == MENU_TYPE_CAPTURE)
             {                                // Capture submenu selection
@@ -932,7 +942,13 @@ static void render_output_menu()
 {
     osd_text_print_centered(OSD_SUBTITLE_ROW, "OUTPUT SETTINGS", OSD_COLOR_SELECTED, OSD_COLOR_BACKGROUND);
 
-    for (int i = 0; i < 4; i++)
+#ifdef HIRES_ENABLE
+    int item_count = 3; // mode, scanlines, back
+#else
+    int item_count = 4; // mode, scanlines, buffering, back
+#endif
+
+    for (int i = 0; i < item_count; i++)
     {
         uint8_t row = OSD_MENU_START_ROW + i;
         uint8_t color = OSD_COLOR_TEXT;
@@ -998,9 +1014,15 @@ static void render_output_menu()
         }
         else if (i == 1)
             osd_text_printf(row, 2, fg_color, bg_color, "%-9s %s", "SCANLINES", settings.scanlines_mode ? "ON" : "OFF");
+#ifndef HIRES_ENABLE
         else if (i == 2)
             osd_text_printf(row, 2, fg_color, bg_color, "%-9s %s", "BUFFERING", settings.buffering_mode ? "X3" : "X1");
+#endif
+#ifdef HIRES_ENABLE
+        else if (i == 2)
+#else
         else if (i == 3)
+#endif
             osd_text_print(row, 2, "< BACK TO MAIN", fg_color, bg_color);
 
         if (i == 0 && i == osd_state.selected_item && osd_state.tuning_mode)
