@@ -70,7 +70,6 @@ void print_main_menu()
     printf("  y   set video sync mode\n");
     printf("  t   set capture delay and image position\n");
     printf("  m   set pin inversion mask\n");
-
 #ifdef OSD_FF_ENABLE
     printf("  g   configure FlashFloppy OSD\n");
 #endif
@@ -97,8 +96,9 @@ void print_video_out_menu()
     case VGA:
         printf("  2    800x600 @60Hz (div 2)\n");
         printf("  3   1024x768 @60Hz (div 3)\n");
-        printf("  4  1280x1024 @60Hz (div 3)\n");
-        printf("  5  1280x1024 @60Hz (div 4)\n");
+        printf("  4   1024x768 @60Hz (div 4)\n");
+        printf("  5  1280x1024 @60Hz (div 3)\n");
+        printf("  6  1280x1024 @60Hz (div 4)\n");
         break;
 
     default:
@@ -274,8 +274,12 @@ void print_video_out_mode()
         printf("800x600 @60Hz\n");
         break;
 
-    case MODE_1024x768_60Hz:
-        printf("1024x768 @60Hz\n");
+    case MODE_1024x768_60Hz_d3:
+        printf("1024x768 @60Hz (div 3)\n");
+        break;
+
+    case MODE_1024x768_60Hz_d4:
+        printf("1024x768 @60Hz (div 4)\n");
         break;
 
     case MODE_1280x1024_60Hz_d3:
@@ -442,6 +446,7 @@ void print_ff_osd_menu()
 void print_ff_osd_i2c_protocol()
 {
     printf("  I2C protocol ............... ");
+
     if (settings.ff_osd_config.i2c_protocol)
         printf("FlashFloppy\n");
     else
@@ -603,7 +608,7 @@ void handle_serial_menu()
                 case '3':
                     if (settings.video_out_type == VGA)
                     {
-                        settings.video_out_mode = MODE_1024x768_60Hz;
+                        settings.video_out_mode = MODE_1024x768_60Hz_d3;
                         print_video_out_mode();
                     }
 
@@ -612,13 +617,22 @@ void handle_serial_menu()
                 case '4':
                     if (settings.video_out_type == VGA)
                     {
-                        settings.video_out_mode = MODE_1280x1024_60Hz_d3;
+                        settings.video_out_mode = MODE_1024x768_60Hz_d4;
                         print_video_out_mode();
                     }
 
                     break;
 
                 case '5':
+                    if (settings.video_out_type == VGA)
+                    {
+                        settings.video_out_mode = MODE_1280x1024_60Hz_d3;
+                        print_video_out_mode();
+                    }
+
+                    break;
+
+                case '6':
                     if (settings.video_out_type == VGA)
                     {
                         settings.video_out_mode = MODE_1280x1024_60Hz_d4;
@@ -1190,6 +1204,7 @@ void handle_serial_menu()
                         settings.ff_osd_config.rows = (settings.ff_osd_config.rows == 2) ? 4 : 2;
                         print_ff_osd_rows();
                     }
+
                     break;
 
                 case 'a':
@@ -1198,7 +1213,9 @@ void handle_serial_menu()
                         settings.ff_osd_config.cols = ff_osd_set_cols(settings.ff_osd_config.cols + 1);
                         print_ff_osd_cols();
                     }
+
                     break;
+
                 case 'z':
                     if (!settings.ff_osd_config.i2c_protocol)
                     {
@@ -1283,6 +1300,7 @@ void handle_serial_menu()
                     printf("%d\n", ff_osd_display.cols);
 
                     printf("\n  Text content:\n");
+
                     for (int row = 0; row < ff_osd_display.rows && row < 4; row++)
                     {
                         printf("    Row ");
@@ -1290,13 +1308,16 @@ void handle_serial_menu()
                         printf(": Height bits: ");
                         printf("%02x", (ff_osd_display.heights >> row) & 1);
                         printf("%02x \"");
+
                         for (int col = 0; col < ff_osd_display.cols && col < 40; col++)
                         {
                             char c = ff_osd_display.text[row][col];
                             printf("%c", (c >= 32 && c < 127) ? c : '.');
                         }
+
                         printf("\"\n");
                     }
+
                     printf("\n");
                     break;
                 }
