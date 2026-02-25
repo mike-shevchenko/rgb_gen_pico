@@ -47,7 +47,7 @@ NOTE: The intensity (brightness) bit/pin is not currently supported by the firmw
 ### Murmulator boards with the VGA connector:
 
 #### SCART/BNC:
-
+```
 GND       --------------> GND (any of SCART pins 5, 9, 13, 18)
 3V3 or 5V ---[150]------> Blank (SCART-only: SCART pin 16)
 VGA 1 R   --------------> R (SCART pin 15)
@@ -56,20 +56,22 @@ VGA 3 B   --------------> B (SCART pin 7)
 VGA 13 HS ---|<|--+
                   |
 VGA 14 VS ---|<|--+-----> Sync (SCART pin 20)
+```
 
 #### DIN-7 for Agat:
-
+```
 VGA 4 GND --------------> GND (DIN-7 pin 2)
 VGA 1 R   --------------> R (DIN-7 pin 3)
 VGA 2 G   --------------> G (DIN-7 pin 6)
 VGA 3 B   --------------> B (DIN-7 pin 1)
 VGA 13 HS --------------> HS (DIN-7 pin 5)
 VGA 14 VS --------------> VS (DIN-7 pin 4)
+```
 
 ### RPi Pico or WaveShare RP2040:
 
 #### SCART/BNC:
-
+```
 GND       --------------> GND (any of SCART pins 5, 9, 13, 18)
 3V3 or 5V ---[150]------> Blank (SCART-only: SCART pin 16)
 
@@ -88,12 +90,14 @@ GP11 RH   ---[430]--+---> R (SCART pin 15)
 GP12 HS   ----|<|---+
                     |
 GP13 VS   ----|<|---+---> Sync (SCART pin 20)
+```
 
 #### DIN-7 for Agat:
-
+```
 GND     --------------> GND (DIN-7 pin 2)
 GP7 BH  ---[330]------> R (DIN-7 pin 3)
 GP9 GH  ---[330]------> G (DIN-7 pin 6)
 GP11 RH ---[330]------> B (DIN-7 pin 1)
 GP12 HS --------------> HS (DIN-7 pin 5)
 GP13 VS --------------> VS (DIN-7 pin 4)
+```
