@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(EXECUTABLE_NAME "ZX_RGBI_TO_VGA_HDMI")
+set(EXECUTABLE_NAME "rgb_gen_pico")
 set(PICO_BOARD pico CACHE STRING "Board type")
 
 # Initialize pico_sdk from installed location
@@ -29,38 +29,19 @@ endif()
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(ZX_RGBI_TO_VGA_HDMI C CXX ASM)
+project(rgb_gen_pico C CXX ASM)
 
 # Initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
-
-# Build options
-# These control which source files are compiled and which libraries are linked
-# enable OSD menu
-set(OSD_MENU_ENABLE 1)
 
 # Add executable
 add_executable(${EXECUTABLE_NAME})
 
 target_sources(
     ${EXECUTABLE_NAME} PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/src/dvi.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/g_config.c 
     ${CMAKE_CURRENT_LIST_DIR}/src/main.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/rgb_capture.c 
-    ${CMAKE_CURRENT_LIST_DIR}/src/serial_menu.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/settings.c 
-    ${CMAKE_CURRENT_LIST_DIR}/src/v_buf.c 
-    ${CMAKE_CURRENT_LIST_DIR}/src/vga.c 
-    ${CMAKE_CURRENT_LIST_DIR}/src/video_output.c
 )
 
-# Conditionally add OSD menu source files
-if(DEFINED OSD_MENU_ENABLE)
-    target_sources(${EXECUTABLE_NAME} PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/src/osd_menu.c
-    )
-endif()
 # Generate PIO header
 pico_generate_pio_header(${EXECUTABLE_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/src/programs.pio
@@ -88,11 +69,6 @@ target_link_libraries(${EXECUTABLE_NAME}
 target_compile_options(${EXECUTABLE_NAME} PRIVATE 
     -O3 
 )
-
-# Add compile definitions for OSD features
-if(DEFINED OSD_MENU_ENABLE)
-    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE OSD_MENU_ENABLE)
-endif()
 
 # Add firmware version definition if provided via CMake
 if(DEFINED FW_VERSION)
