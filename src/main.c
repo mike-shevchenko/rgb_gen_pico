@@ -495,19 +495,19 @@ void start_vga(void)
 
 // Agat-7 display parameters.
 #define PHYSICAL_WIDTH 256  // Physical video signal width.
-#define PHYSICAL_HEIgHT 256  // Physical video signal height.
+#define PHYSICAL_HEIGHT 256  // Physical video signal height.
 #define TEXT_COLS 32  // 32 characters per line.
 #define TEXT_ROWS 32  // 32 lines (full height used).
 #define CHAR_WIDTH 7  // 7 pixels per character (no spacing in text area).
-#define CHAR_HEIgHT 8   // 8 pixels per character.
+#define CHAR_HEIGHT 8   // 8 pixels per character.
 
 // Text area dimensions.
 #define TEXT_AREA_WIDTH (TEXT_COLS * CHAR_WIDTH)  // 224 pixels.
-#define TEXT_AREA_HEIgHT (TEXT_ROWS * CHAR_HEIgHT)  // 256 pixels.
+#define TEXT_AREA_HEIGHT (TEXT_ROWS * CHAR_HEIGHT)  // 256 pixels.
 
 // Centering margins.
-#define H_MARgIN ((PHYSICAL_WIDTH - TEXT_AREA_WIDTH) / 2)  // 16 pixels on each side.
-#define V_MARgIN ((PHYSICAL_HEIgHT - TEXT_AREA_HEIgHT) / 2)  // 0 pixels (full height).
+#define H_MARGIN ((PHYSICAL_WIDTH - TEXT_AREA_WIDTH) / 2)  // 16 pixels on each side.
+#define V_MARGIN ((PHYSICAL_HEIGHT - TEXT_AREA_HEIGHT) / 2)  // 0 pixels (full height).
 
 // Text buffer for 32x32 characters.
 char text_buffer[TEXT_ROWS][TEXT_COLS + 1];  // +1 for null terminator per row.
@@ -566,8 +566,8 @@ void render_char_at_text_pos(int text_x, int text_y, char c, uint8_t color) {
   const int char_index = c - 32;
   
   // Calculate pixel position with margin
-  const int base_pixel_x = H_MARgIN + (text_x * CHAR_WIDTH);
-  const int base_pixel_y = V_MARgIN + (text_y * CHAR_HEIgHT);
+  const int base_pixel_x = H_MARGIN + (text_x * CHAR_WIDTH);
+  const int base_pixel_y = V_MARGIN + (text_y * CHAR_HEIGHT);
   
   for (int row = 0; row < 8; row++) {
     const uint8_t char_line = agat7_font[char_index][row];
