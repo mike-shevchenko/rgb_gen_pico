@@ -46,6 +46,8 @@ typedef enum color_t {
   COLOR_MAGENTA = COLOR_RED | COLOR_BLUE,
   COLOR_YELLOW = COLOR_RED | COLOR_GREEN,
   COLOR_CYAN = COLOR_BLUE | COLOR_GREEN,
+  COLOR_WHITE = COLOR_RED | COLOR_GREEN | COLOR_BLUE,
+  COLOR_BRIGHT = 8  // To be added to other colors.
 } color_t;
 
 typedef enum video_out_mode_t {
@@ -374,20 +376,21 @@ void start_vga(void)
   sleep_ms(10);
 
   // Palette initialization.
+  // TODO: Investigate the proper way to output "bright black".
   for (int i = 0; i < 16; ++i) {
     uint8_t Yi = (i >> 3) & 1;
     uint8_t Ri = ((i >> 2) & 1) ? (Yi ? 0b00000011 : 0b00000010) : 0;
-    uint8_t gi = ((i >> 1) & 1) ? (Yi ? 0b00001100 : 0b00001000) : 0;
-    uint8_t bi = ((i >> 0) & 1) ? (Yi ? 0b00110000 : 0b00100000) : 0;
+    uint8_t Gi = ((i >> 1) & 1) ? (Yi ? 0b00001100 : 0b00001000) : 0;
+    uint8_t Bi = ((i >> 0) & 1) ? (Yi ? 0b00110000 : 0b00100000) : 0;
 
     for (int j = 0; j < 16; ++j) {
       uint8_t Yj = (j >> 3) & 1;
       uint8_t Rj = ((j >> 2) & 1) ? (Yj ? 0b00000011 : 0b00000010) : 0;
-      uint8_t gj = ((j >> 1) & 1) ? (Yj ? 0b00001100 : 0b00001000) : 0;
-      uint8_t bj = ((j >> 0) & 1) ? (Yj ? 0b00110000 : 0b00100000) : 0;
+      uint8_t Gj = ((j >> 1) & 1) ? (Yj ? 0b00001100 : 0b00001000) : 0;
+      uint8_t Bj = ((j >> 0) & 1) ? (Yj ? 0b00110000 : 0b00100000) : 0;
 
-      palette[(i * 16) + j] = ((uint16_t)(Ri | gi | bi | (NO_SYNC ^ video_mode.sync_polarity)) << 8)
-          | (Rj | gj | bj | (NO_SYNC ^ video_mode.sync_polarity));
+      palette[(i * 16) + j] = ((uint16_t)(Ri | Gi | Bi | (NO_SYNC ^ video_mode.sync_polarity)) << 8)
+          | (Rj | Gj | Bj | (NO_SYNC ^ video_mode.sync_polarity));
     }
   }
 
@@ -644,9 +647,27 @@ void draw_grid(void) {
 }
 
 void draw_color_bars(void ) {
-  for (int color = 0; color < 16; ++color) {
+  const uint8_t colors[] = {  // Agat-7 color sequence.
+      COLOR_BLACK,
+      COLOR_RED,
+      COLOR_GREEN,
+      COLOR_YELLOW,
+      COLOR_BLUE,
+      COLOR_MAGENTA,
+      COLOR_CYAN,
+      COLOR_WHITE,
+      COLOR_BLACK + COLOR_BRIGHT,
+      COLOR_RED + COLOR_BRIGHT,
+      COLOR_GREEN + COLOR_BRIGHT,
+      COLOR_YELLOW + COLOR_BRIGHT,
+      COLOR_BLUE + COLOR_BRIGHT,
+      COLOR_MAGENTA + COLOR_BRIGHT,
+      COLOR_CYAN + COLOR_BRIGHT,
+      COLOR_WHITE + COLOR_BRIGHT,
+};
+  for (int bar = 0; bar < 16; ++bar) {
     for (int x_half = 0; x_half < 7; ++x_half) {  // Each bar will be 14 pixels wide.
-      draw_vert(8 + color * 7 + x_half, 128, 32, color);
+      draw_vert(8 + bar * 7 + x_half, 128, 32, colors[bar]);
     }
   }
 }
@@ -655,22 +676,39 @@ void print_some_text(void) {
   memset(g_v_buf, 0, V_BUF_SZ);
   
   init_text_buffer();
-  
-  print_at(11, 1, "** agat **");
-  print_at(0, 3, "TEXT: 32X32, GRAPHICS: 256x256");
-  print_at(0, 4, "MARGINS: 16PX LEFT+RIGHT");
 
-  print_at(0, 6, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-  print_at(0, 7, "0123456789 !@#$%^&*()_+-=");
-
-  print_at(0, 9, "00000000001111111111222222222233");
-  print_at(0, 10, "01234567890123456789012345678901");
-
-  print_at(0, 13, "....NORMAL..... ....BRIGHT.....");
-  print_at(0, 15, "0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7");
-
-  print_at(0, 29, "WRITTEN BY MIKE SHEVCHENKO");
-  print_at(0, 30, "  USING CLAUDE 4 SONNET");
+  int y = 0;
+  print_at(11, ++y, "** agat **");  // The lower-case letters yield Cyrillic (Russian).
+  ++y;
+  print_at(0, ++y, "GRAPHICS MODE: 256*256");
+  print_at(0, ++y, "TEXT MODE: 32*32 (7*8 => 224*256)");
+  ++y;
+  // Print the complete font - 96 chars (32 x 3).
+  for (int line = 0; line < 3; ++line) {
+    ++y;
+    for (int x = 0; x < 32; ++x) {
+      const char s[] = {32 + line * 32 + x, '\0'};
+      print_at(x, y, s);
+    }
+  }
+  ++y;
+  print_at(0, ++y, "00000000001111111111222222222233");
+  print_at(0, ++y, "01234567890123456789012345678901");
+  ++y;
+  print_at(0, ++y, "....NORMAL..... ....BRIGHT.....");
+  ++y;
+  print_at(0, ++y, "0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7");
+  y += 5;
+  print_at(0, ++y, "HTTPS://GITHUB.COM/");
+  print_at(0, ++y, "  MIKE-SHEVCHENKO/RGB_GEN_PICO");
+  ++y;
+  print_at(0, ++y, "-> ZX-RGBI-TO-VGA-HDMI-PICOSDK");
+  print_at(0, ++y, "  BY OLEKSANDR SEMENYUK");
+  ++y;
+  print_at(0, ++y, "-> ZX-RGBI2VGA-HDMI");
+  print_at(0, ++y, "  BY ALEX-EKB");
+  ++y;
+  print_at(0, ++y, "INSPIRED BY HTTP://MURMULATOR.RU");
   
   render_text_buffer();
 }
