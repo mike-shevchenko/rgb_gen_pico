@@ -22,18 +22,29 @@ select `Pico`. After seeing the message (at the bottom of the window)
 `[cmake] -- Build files have been written to...`, click the `Compile` button at the bottom right,
 and the file `build/rgb_gen_pico.uf2` will appear.
 
-Connect the board to USB and to a TV/Monitor (see below) - a folder associated with the board will
-open (as Mass Storage) - drag'n'drop the built .uf2 file to this folder, it will be closed and the
-firmware will start working immediately - enjoy the picture.
+Connect the board to USB and to a TV/Monitor (see below), press and hold the RESET button and then 
+press the BOOT (BOOTSEL) button - a folder associated with the board will open (as Mass Storage).
+
+On Windows 10, if the folder does not open, check Device Manager for exclamation mark on the RPi 
+USB device - if shown, you can try to install the `libusb` driver via
+[VisualGDB USB Driver Tool](https://visualgdb.com/UsbDriverTool).
+
+Then drag'n'drop the built .uf2 file to this folder, it will be closed, and the firmware will start
+working immediately - enjoy the picture.
 
 ---------------------------------------------------------------------------------------------------
 # Hardware
 
-The firmware is compatible with any of the following boards:
+The firmware source code is compatible with any of the following boards:
 - WaveShare RP2040-Zero
 - Original Raspberry Pi Pico
 - [Murmulator](https://murmulator.ru/types)
 - [Murmulator-based RGB-to-VGA/HDMI](https://murmulator.ru/rgbtovgahdmi)
+
+ATTENTION: Due to different GPIO assignments, the firmware must be compiled with the proper BOARD 
+macro definition (see `main.c`): the Murmulator boards have the VGA connector on GPIO 6 to 13, and
+the RGB2VGA boards have it on GPIO 8 to 15. If using a generic board, it is recommended to stick to
+the RGB2VGA pinout - this is the default BOARD macro definition.
 
 ## Connect the monitor/TV:
 
@@ -44,7 +55,7 @@ Use either of the following TV/monitors:
 
 NOTE: The intensity (brightness) bit/pin is not currently supported by the firmware.
 
-### Murmulator boards with the VGA connector:
+### Murmulator/RGB2VGA board with the VGA connector:
 
 #### SCART/BNC:
 ```
@@ -70,34 +81,50 @@ VGA 14 VS --------------> VS (DIN-7 pin 4)
 
 ### RPi Pico or WaveShare RP2040:
 
-#### SCART/BNC:
+#### SCART/BNC with brightness support (future-proof):
 ```
 GND       --------------> GND (any of SCART pins 5, 9, 13, 18)
 3V3 or 5V ---[150]------> Blank (SCART-only: SCART pin 16)
 
-GP6 BL    ---[ 1k]--+
+GP8 RL    ---[ 1k]--+
                     |
-GP7 BH    ---[430]--+---> B (SCART pin 7)
+GP9 RH    ---[430]--+---> R (SCART pin 15)
 
-GP8 GL    ---[ 1k]--+
+GP10 GL   ---[ 1k]--+
                     |
-GP9 GH    ---[430]--+---> G (SCART pin 11)
+GP11 GH   ---[430]--+---> G (SCART pin 11)
 
-GP10 RL   ---[ 1k]--+
+GP12 BL   ---[ 1k]--+
                     |
-GP11 RH   ---[430]--+---> R (SCART pin 15)
+GP13 BH   ---[430]--+---> B (SCART pin 7)
 
-GP12 HS   ----|<|---+
+GP14 HS   ----|<|---+
                     |
-GP13 VS   ----|<|---+---> Sync (SCART pin 20)
+GP15 VS   ----|<|---+---> Sync (SCART pin 20)
+```
+NOTE: This replicates the schematics of the RGB2VGA boards.
+
+#### SCART/BNC with no brightness support (simplified):
+```
+GND       --------------> GND (any of SCART pins 5, 9, 13, 18)
+3V3 or 5V ---[150]------> Blank (SCART-only: SCART pin 16)
+GP9 RH    ---[270]--+---> R (SCART pin 15)
+GP11 GH   ---[270]--+---> G (SCART pin 11)
+GP13 BH   ---[270]--+---> B (SCART pin 7)
+
+GP14 HS   ----|<|---+
+                    |
+GP15 VS   ----|<|---+---> Sync (SCART pin 20)
 ```
 
 #### DIN-7 for Agat:
 ```
 GND     --------------> GND (DIN-7 pin 2)
-GP7 BH  ---[330]------> R (DIN-7 pin 3)
-GP9 GH  ---[330]------> G (DIN-7 pin 6)
-GP11 RH ---[330]------> B (DIN-7 pin 1)
-GP12 HS --------------> HS (DIN-7 pin 5)
-GP13 VS --------------> VS (DIN-7 pin 4)
+GP9 RH  ---[330]------> B (DIN-7 pin 1)
+GP11 GH ---[330]------> G (DIN-7 pin 6)
+GP13 BH ---[330]------> R (DIN-7 pin 3)
+GP14 HS --------------> HS (DIN-7 pin 5)
+GP15 VS --------------> VS (DIN-7 pin 4)
 ```
+NOTE: In order to achieve the 5V level as on the real Agat, connecting the R, G, B signals via an
+SN74HCT244N level shifter is recommended (then the resistors are not needed).

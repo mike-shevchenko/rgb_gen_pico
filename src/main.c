@@ -23,8 +23,20 @@
 //-------------------------------------------------------------------------------------------------
 // Config
 
-#define BOARD_CODE_36LJU22
-// #define BOARD_CODE_09LJV23
+// Choose the hardware version.
+#if !defined(BOARD)  // Can be defined externally with -DBOARD=...
+  #define BOARD RGB2VGA
+  //#define BOARD MURMULATOR
+#endif // defined(BOARD)
+
+// The first VGA GPIO pin.
+#if (BOARD == RGB2VGA)
+  #define VGA_PIN_D0 8
+#elif (BOARD == MURMULATOR)
+  #define VGA_PIN_D0 6
+#else
+  #error "Unsupported BOARD."
+#endif
 
 typedef enum color_t {
   COLOR_BLACK = 0,
@@ -91,13 +103,6 @@ video_mode_t mode_agat7 = {
     .sync_polarity = 0b11000000, // Negative sync polarity.
     .div = 1,  // Keep the divider from working version.
 };
-
-// The first VGA pin.
-#ifdef BOARD_CODE_36LJU22
-  #define VGA_PIN_D0 8
-#else
-  #define VGA_PIN_D0 7
-#endif
 
 // PIO and SM for VGA.
 #define PIO_VGA pio0
