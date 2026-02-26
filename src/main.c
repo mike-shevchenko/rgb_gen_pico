@@ -511,18 +511,20 @@ void start_vga(void)
 
 // Text buffer for 32x32 characters.
 char text_buffer[TEXT_ROWS][TEXT_COLS + 1];  // +1 for null terminator per row.
+uint8_t text_color[TEXT_ROWS][TEXT_COLS];
 
 void init_text_buffer() {
   for (int row = 0; row < TEXT_ROWS; row++) {
     for (int col = 0; col < TEXT_COLS; col++) {
       text_buffer[row][col] = ' ';  // Fill with spaces.
+      text_color[row][col] = COLOR_WHITE;
     }
     text_buffer[row][TEXT_COLS] = '\0';  // Null-terminate each row.
   }
 }
 
 // Print the string at text coordinates (0..31, 0..31).
-void print_at(int text_x, int text_y, const char* str) {
+void print_colored_at(int text_x, int text_y, const char* str, uint8_t color) {
   if (text_y < 0 || text_y >= TEXT_ROWS) {
     return;
   }
@@ -542,6 +544,7 @@ void print_at(int text_x, int text_y, const char* str) {
       // Place the character to the buffer.
       if (col >= 0) {
         text_buffer[text_y][col] = *ptr;
+        text_color[text_y][col] = color;
       }
       ++col;
     }
@@ -549,8 +552,12 @@ void print_at(int text_x, int text_y, const char* str) {
   }
 }
 
+void print_at(int text_x, int text_y, const char* str) {
+  print_colored_at(text_x, text_y, str, COLOR_GREEN);
+}
+
 // NOTE: Accounts for the margins.
-void render_char_at_text_pos(int text_x, int text_y, char c) {
+void render_char_at_text_pos(int text_x, int text_y, char c, uint8_t color) {
   if (c < 32 || c > 127) {
     // Support only printable ASCII and 127.
     return;
@@ -574,9 +581,7 @@ void render_char_at_text_pos(int text_x, int text_y, char c) {
         if (screen_x >= 0 && screen_x < V_BUF_W && 
             screen_y >= 0 && screen_y < V_BUF_H) {
             
-          int buf_index = screen_y * (V_BUF_W / 2) + screen_x / 2;
-          uint8_t color = 0x0F;  // White pixel (IRgb = 1111).
-          
+          const int buf_index = screen_y * (V_BUF_W / 2) + screen_x / 2;
           if (screen_x & 1) {
             g_v_buf[buf_index] = (g_v_buf[buf_index] & 0x0F) | (color << 4);
           } else {
@@ -593,7 +598,7 @@ void render_text_buffer() {
   for (int text_row = 0; text_row < TEXT_ROWS; text_row++) {
     for (int text_col = 0; text_col < TEXT_COLS; text_col++) {
       const char c = text_buffer[text_row][text_col];
-      render_char_at_text_pos(text_col, text_row, c);
+      render_char_at_text_pos(text_col, text_row, c, text_color[text_row][text_col]);
     }
   }
 }
@@ -678,7 +683,8 @@ void print_some_text(void) {
   init_text_buffer();
 
   int y = 0;
-  print_at(11, ++y, "** agat **");  // The lower-case letters yield Cyrillic (Russian).
+  print_at(11, ++y, "**      **");
+  print_colored_at(14, y, "agat", COLOR_RED);  // The lower-case letters yield Cyrillic (Russian).
   ++y;
   print_at(0, ++y, "GRAPHICS MODE: 256*256");
   print_at(0, ++y, "TEXT MODE: 32*32 (7*8 => 224*256)");
