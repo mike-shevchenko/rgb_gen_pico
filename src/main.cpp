@@ -404,23 +404,23 @@ void start_vga(void)
   // Allocate memory for the line template definitions - individual allocations.
 
   // Empty line.
-  v_out_dma_buf[0] = calloc(whole_line / 4, sizeof(uint32_t));
+  v_out_dma_buf[0] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
   memset((uint8_t *)v_out_dma_buf[0], (NO_SYNC ^ video_mode.sync_polarity), whole_line);
   memset((uint8_t *)v_out_dma_buf[0] + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity),
       h_sync_pulse);
   
   // Vertical sync pulse.
-  v_out_dma_buf[1] = calloc(whole_line / 4, sizeof(uint32_t));
+  v_out_dma_buf[1] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
   memset((uint8_t *)v_out_dma_buf[1], (V_SYNC ^ video_mode.sync_polarity), whole_line);
   memset((uint8_t *)v_out_dma_buf[1] + h_sync_pulse_front, (VH_SYNC ^ video_mode.sync_polarity),
       h_sync_pulse);
 
   // Image line.
-  v_out_dma_buf[2] = calloc(whole_line / 4, sizeof(uint32_t));
+  v_out_dma_buf[2] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
   memcpy((uint8_t *)v_out_dma_buf[2], (uint8_t *)v_out_dma_buf[0], whole_line);
 
   // Image line.
-  v_out_dma_buf[3] = calloc(whole_line / 4, sizeof(uint32_t));
+  v_out_dma_buf[3] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
   memcpy((uint8_t *)v_out_dma_buf[3], (uint8_t *)v_out_dma_buf[0], whole_line);
 
   // PIO initialization.
@@ -693,7 +693,7 @@ void print_some_text(void) {
   for (int line = 0; line < 3; ++line) {
     ++y;
     for (int x = 0; x < 32; ++x) {
-      const char s[] = {32 + line * 32 + x, '\0'};
+      const char s[] = {(char) (32 + line * 32 + x), '\0'};
       print_at(x, y, s);
     }
   }
