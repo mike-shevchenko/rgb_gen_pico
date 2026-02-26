@@ -18,7 +18,7 @@
 
 #include "../build/programs.pio.h"
 
-#include "agat7_font.c"
+#include "agat7_font.h"
 
 //-------------------------------------------------------------------------------------------------
 // Config
