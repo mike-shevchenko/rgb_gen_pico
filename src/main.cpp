@@ -103,6 +103,7 @@ video_mode_t mode_agat7 = {
     .v_sync_pulse = 8,  // Vertical sync pulse.
     .v_back_porch = 32,  // Vertical back porch.
     .sync_polarity = 0b11000000, // Negative sync polarity.
+    //.sync_polarity = 0b00000000, // Positive sync polarity.
     .div = 1,  // Keep the divider from working version.
 };
 
