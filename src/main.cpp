@@ -96,14 +96,14 @@ video_mode_t mode_agat7 = {
     .v_visible_area = 256,  // 256 visible lines (Agat-7 specification).
     .whole_line = 336,  // Total pixels per line (256 + porches + sync).
     .whole_frame = 312,  // Total lines per frame (PAL-compatible 50Hz).
-    .h_front_porch = 16,  // Horizontal front porch.
+    .h_front_porch = 22,  // Horizontal front porch.
     .h_sync_pulse = 32,  // Horizontal sync pulse.
-    .h_back_porch = 32,  // Horizontal back porch.
-    .v_front_porch = 16,  // Vertical front porch. 
+    .h_back_porch = 26,  // Horizontal back porch.
+    .v_front_porch = 25,  // Vertical front porch. 
     .v_sync_pulse = 8,  // Vertical sync pulse.
-    .v_back_porch = 32,  // Vertical back porch.
-    .sync_polarity = 0b11000000, // Negative sync polarity.
-    //.sync_polarity = 0b00000000, // Positive sync polarity.
+    .v_back_porch = 23,  // Vertical back porch.
+    //.sync_polarity = 0b11000000, // Negative sync polarity.
+    .sync_polarity = 0b00000000, // Positive sync polarity.
     .div = 1,  // Keep the divider from working version.
 };
 
