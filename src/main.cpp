@@ -683,9 +683,10 @@ void print_some_text(void) {
   
   init_text_buffer();
 
-  int y = 0;
+  int y = -1;
   print_at(11, ++y, "**      **");
   print_colored_at(14, y, "agat", COLOR_RED);  // The lower-case letters yield Cyrillic (Russian).
+  ++y;
   ++y;
   print_at(0, ++y, "GRAPHICS MODE: 256*256");
   print_at(0, ++y, "TEXT MODE: 32*32 (7*8 => 224*256)");
