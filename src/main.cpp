@@ -29,13 +29,20 @@
   //#define BOARD MURMULATOR
 #endif // defined(BOARD)
 
+// Choose the sync polarity.
+#if !defined(SYNC)  // Can be defined externally with -DSYNC=...
+  #define SYNC NEG
+  //#define SYNC POS
+#endif // defined(BOARD)
+
+
 // The first VGA GPIO pin.
 #if (BOARD == RGB2VGA)
   #define VGA_PIN_D0 8
 #elif (BOARD == MURMULATOR)
   #define VGA_PIN_D0 6
 #else
-  #error "Unsupported BOARD."
+  #error "Unsupported BOARD macro value."
 #endif
 
 typedef enum color_t {
@@ -102,8 +109,13 @@ video_mode_t mode_agat7 = {
     .v_front_porch = 25,  // Vertical front porch. 
     .v_sync_pulse = 8,  // Vertical sync pulse.
     .v_back_porch = 23,  // Vertical back porch.
-    //.sync_polarity = 0b11000000, // Negative sync polarity.
-    .sync_polarity = 0b00000000, // Positive sync polarity.
+    #if (SYNC == NEG)
+      .sync_polarity = 0b11000000, // Negative sync polarity.
+    #elif (SYNC == POS)
+      .sync_polarity = 0b00000000, // Positive sync polarity.
+    #else
+      #error "Unsupported SYNC macro value."
+    #endif
     .div = 1,  // Keep the divider from working version.
 };
 
