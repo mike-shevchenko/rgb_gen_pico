@@ -51,6 +51,9 @@ pico_generate_pio_header(${EXECUTABLE_NAME}
 pico_enable_stdio_uart(${EXECUTABLE_NAME} 0)
 pico_enable_stdio_usb(${EXECUTABLE_NAME} 1)
 
+# Ensure the vendor/reset interface is compiled in.
+set(PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE 1)
+
 # Add the standard include files to the build
 target_include_directories(${EXECUTABLE_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
