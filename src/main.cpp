@@ -117,6 +117,18 @@ constexpr video_mode_t mode_agat7{
     #endif
     .div = 1,  // Scan-doubling is not used.
 };
+static_assert(
+    mode_agat7.h_front_porch
+    + mode_agat7.h_sync_pulse
+    + mode_agat7.h_back_porch
+    + mode_agat7.h_visible_area
+    == mode_agat7.whole_line);
+static_assert(
+    mode_agat7.v_front_porch
+    + mode_agat7.v_sync_pulse
+    + mode_agat7.v_back_porch
+    + mode_agat7.v_visible_area
+    == mode_agat7.whole_frame);
 
 // PIO and SM for VGA.
 #define PIO_VGA pio0
