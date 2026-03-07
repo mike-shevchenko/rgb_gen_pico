@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 #include "pico.h"
 #include "pico/time.h"
@@ -44,7 +43,7 @@
   #error "Unsupported BOARD macro value."
 #endif
 
-typedef enum color_t {
+enum Color {
   COLOR_BLACK = 0,
   COLOR_RED = 0x04,
   COLOR_GREEN = 0x02,
@@ -54,14 +53,9 @@ typedef enum color_t {
   COLOR_CYAN = COLOR_BLUE | COLOR_GREEN,
   COLOR_WHITE = COLOR_RED | COLOR_GREEN | COLOR_BLUE,
   COLOR_BRIGHT = 8  // To be added to other colors.
-} color_t;
+};
 
-typedef enum video_out_mode_t {
-  MODE_640x480_60Hz,
-  MODE_720x576_50Hz,
-} video_out_mode_t;
-
-typedef struct video_mode_t {
+struct VideoMode {
   uint32_t sys_freq;
   float pixel_freq;
   uint16_t h_visible_area;
@@ -76,9 +70,9 @@ typedef struct video_mode_t {
   uint8_t v_back_porch;
   uint8_t sync_polarity;
   uint8_t div;
-} video_mode_t;
+};
 
-constexpr video_mode_t mode_640x480_60Hz{
+constexpr VideoMode kVideoModeVga640x480x60{
     .sys_freq = 252000,
     .pixel_freq = 25175000.0,
     .h_visible_area = 640,
@@ -97,22 +91,22 @@ constexpr video_mode_t mode_640x480_60Hz{
 
 // PAL/SECAM standard:
 // Frame freq: 50 Hz (20 ms). Pulse width: 8 * 64 us = 512 us.
-// Line freq: 15625 Hz. Pulse width: 32 * (1 / pixel_clock) ~= 4.7 us.
-// Hsync pulse starts 11 us before the v-sync pulse.
+// Line freq: 15625 Hz. Pulse width: ~= 4.7 us.
+// Hsync pulse starts synchronously with the vsync pulse.
 //
 // Agat-7:
 // Frame freq: 50.08 Hz (19.97 ms). Pulse width: 4 * 64 us = 256 us.
 // Line freq: 15625 Hz. Pulse width: 16 * (1 / pixel_clock) ~= 3.047 us.
-// hsync pulse starts 3 us after the vsync pulse.
+// hsync pulse starts 3 us (16 pixels) after the vsync pulse.
 //
 // TODO: The current code makes the hsync pulse starts 11 us before the vsync pulse. The buffer
 //     layouts must be changed to allow adjusting this value, because currently the code can
 //     start the vsync pulse no earlier than the first visible pixel of a line.
-constexpr video_mode_t mode_agat7{
-    .sys_freq = 126000,  // 126MHz system clock (keep same as PAL version).
-    .pixel_freq = 5250000.0,  // 5.25MHz pixel clock (Agat-7 specification).
-    .h_visible_area = 256,  // 256 visible pixels (Agat-7 specification).
-    .v_visible_area = 256,  // 256 visible lines (Agat-7 specification).
+constexpr VideoMode kVideoModeAgat7{
+    .sys_freq = 126000,  // 126 MHz system clock.
+    .pixel_freq = 5250000.0,  // 5.25 MHz pixel clock.
+    .h_visible_area = 256,  // 256 visible pixels.
+    .v_visible_area = 256,  // 256 visible lines.
     .whole_line = 336,  // Total pixels per line (256 + porches + sync).
     .whole_frame = 312,  // Total lines per frame (PAL-compatible 50Hz).
     .h_front_porch = 22,  // Horizontal front porch, in pixels (1 / pixel_clock).
@@ -131,17 +125,17 @@ constexpr video_mode_t mode_agat7{
     .div = 1,  // Scan-doubling is not used.
 };
 static_assert(
-    mode_agat7.h_front_porch
-    + mode_agat7.h_sync_pulse
-    + mode_agat7.h_back_porch
-    + mode_agat7.h_visible_area
-    == mode_agat7.whole_line);
+    kVideoModeAgat7.h_front_porch
+    + kVideoModeAgat7.h_sync_pulse
+    + kVideoModeAgat7.h_back_porch
+    + kVideoModeAgat7.h_visible_area
+    == kVideoModeAgat7.whole_line);
 static_assert(
-    mode_agat7.v_front_porch
-    + mode_agat7.v_sync_pulse
-    + mode_agat7.v_back_porch
-    + mode_agat7.v_visible_area
-    == mode_agat7.whole_frame);
+    kVideoModeAgat7.v_front_porch
+    + kVideoModeAgat7.v_sync_pulse
+    + kVideoModeAgat7.v_back_porch
+    + kVideoModeAgat7.v_visible_area
+    == kVideoModeAgat7.whole_frame);
 
 // PIO and SM for VGA.
 #define PIO_VGA pio0
@@ -175,7 +169,7 @@ static int dma_ch0;
 static int dma_ch1;
 static uint offset;
 
-static video_mode_t video_mode;
+static VideoMode video_mode;
 static int16_t h_visible_area;
 static int16_t h_margin;
 static int16_t v_visible_area;
@@ -188,7 +182,7 @@ void __not_in_flash_func(memset32)(uint32_t* dst, const uint32_t data, uint32_t 
 
 #if 0 // Original VGA code.
 
-void __not_in_flash_func(dma_handler_vga)(void)
+void __not_in_flash_func(dma_handler_vga)()
 {
   static uint16_t y = 0;
 
@@ -210,13 +204,15 @@ void __not_in_flash_func(dma_handler_vga)(void)
     dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
     return;
   }
-  else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch) && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse))
+  else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch)
+      && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse))
   {
     // vertical sync pulse
     dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[1], false);
     return;
   }
-  else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse) && y < video_mode.whole_frame)
+  else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)
+      && y < video_mode.whole_frame)
   {
     // vertical sync back porch
     dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
@@ -229,14 +225,15 @@ void __not_in_flash_func(dma_handler_vga)(void)
     return;
   }
 
-  // top and bottom black bars when the vertical size of the image is smaller than the vertical resolution of the screen
+  // Top and bottom black bars when the vertical size of the image is smaller than the vertical
+  // resolution of the screen.
   if (y < v_margin || y >= (v_visible_area + v_margin))
   {
     dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
     return;
   }
 
-  // image area
+  // Image area.
   uint8_t line = y % (2 * video_mode.div);
 
   switch (video_mode.div)
@@ -336,7 +333,7 @@ void __not_in_flash_func(dma_handler_vga)(void)
 
 uint32_t* prepared_line_buffers[256];  // One buffer per line.
 
-void prepare_frame_buffer_lines(void) {
+void prepare_frame_buffer_lines() {
   int whole_line = video_mode.whole_line / video_mode.div;
   int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
   int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
@@ -388,8 +385,7 @@ void __not_in_flash_func(dma_handler_vga)()
 
 #endif // 0
 
-void start_vga(void)
-{
+void start_vga() {
   int whole_line = video_mode.whole_line / video_mode.div;
   int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
   int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
@@ -410,7 +406,7 @@ void start_vga(void)
   if (v_margin < 0)
     v_margin = 0;
 
-  set_sys_clock_khz(video_mode.sys_freq, true);
+  set_sys_clock_khz(video_mode.sys_freq, /*required=*/true);
   sleep_ms(10);
 
   // Palette initialization.
@@ -427,7 +423,8 @@ void start_vga(void)
       uint8_t Gj = ((j >> 1) & 1) ? (Yj ? 0b00001100 : 0b00001000) : 0;
       uint8_t Bj = ((j >> 0) & 1) ? (Yj ? 0b00110000 : 0b00100000) : 0;
 
-      palette[(i * 16) + j] = ((uint16_t)(Ri | Gi | Bi | (NO_SYNC ^ video_mode.sync_polarity)) << 8)
+      palette[(i * 16) + j] =
+          ((uint16_t)(Ri | Gi | Bi | (NO_SYNC ^ video_mode.sync_polarity)) << 8)
           | (Rj | Gj | Bj | (NO_SYNC ^ video_mode.sync_polarity));
     }
   }
