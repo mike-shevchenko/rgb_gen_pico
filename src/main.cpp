@@ -35,7 +35,6 @@
   //#define SYNC POS
 #endif // defined(BOARD)
 
-
 // The first VGA GPIO pin.
 #if (BOARD == RGB2VGA)
   #define VGA_PIN_D0 8
@@ -79,7 +78,7 @@ typedef struct video_mode_t {
   uint8_t div;
 } video_mode_t;
 
-video_mode_t mode_640x480_60Hz = {
+constexpr video_mode_t mode_640x480_60Hz{
     .sys_freq = 252000,
     .pixel_freq = 25175000.0,
     .h_visible_area = 640,
@@ -96,7 +95,7 @@ video_mode_t mode_640x480_60Hz = {
     .div = 2,
 };
 
-video_mode_t mode_agat7 = {
+constexpr video_mode_t mode_agat7{
     .sys_freq = 126000,  // 126MHz system clock (keep same as PAL version).
     .pixel_freq = 5250000.0,  // 5.25MHz pixel clock (Agat-7 specification).
     .h_visible_area = 256,  // 256 visible pixels (Agat-7 specification).
@@ -116,7 +115,7 @@ video_mode_t mode_agat7 = {
     #else
       #error "Unsupported SYNC macro value."
     #endif
-    .div = 1,  // Keep the divider from working version.
+    .div = 1,  // Scan-doubling is not used.
 };
 
 // PIO and SM for VGA.
@@ -157,10 +156,10 @@ static int16_t h_margin;
 static int16_t v_visible_area;
 static int16_t v_margin;
 
-static uint32_t *v_out_dma_buf[4];
+static uint32_t* v_out_dma_buf[4];
 static uint16_t palette[256];
 
-void __not_in_flash_func(memset32)(uint32_t *dst, const uint32_t data, uint32_t size);
+void __not_in_flash_func(memset32)(uint32_t* dst, const uint32_t data, uint32_t size);
 
 #if 0 // Original VGA code.
 
@@ -168,7 +167,7 @@ void __not_in_flash_func(dma_handler_vga)(void)
 {
   static uint16_t y = 0;
 
-  static uint8_t *scr_buffer = NULL;
+  static uint8_t* scr_buffer = nullptr;
 
   dma_hw->ints0 = 1u << dma_ch1;
 
@@ -276,8 +275,8 @@ void __not_in_flash_func(dma_handler_vga)(void)
   }
 
   uint16_t scaled_y = (y - v_margin) / video_mode.div; // represents the line in the original captured image
-  uint8_t *scr_line = &scr_buffer[scaled_y * (V_BUF_W / 2)];
-  uint16_t *line_buf = (uint16_t *)v_out_dma_buf[active_buf_idx];
+  uint8_t* scr_line = &scr_buffer[scaled_y * (V_BUF_W / 2)];
+  uint16_t* line_buf = (uint16_t*)v_out_dma_buf[active_buf_idx];
 
   // left margin
   for (int x = h_margin; x--;)
@@ -310,7 +309,7 @@ void __not_in_flash_func(dma_handler_vga)(void)
 
 #else // Agat-7 code.
 
-uint32_t *prepared_line_buffers[256];  // One buffer per line.
+uint32_t* prepared_line_buffers[256];  // One buffer per line.
 
 void prepare_frame_buffer_lines(void) {
   int whole_line = video_mode.whole_line / video_mode.div;
@@ -342,8 +341,9 @@ void __not_in_flash_func(dma_handler_vga)()
 
   dma_hw->ints0 = 1u << dma_ch1;
   y++;
-  if (y == video_mode.whole_frame) y = 0;
-
+  if (y == video_mode.whole_frame) {
+    y = 0;
+  }
   if (y >= video_mode.v_visible_area
       && y < (video_mode.v_visible_area + video_mode.v_front_porch)) {
     dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
@@ -417,24 +417,24 @@ void start_vga(void)
   // Allocate memory for the line template definitions - individual allocations.
 
   // Empty line.
-  v_out_dma_buf[0] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
-  memset((uint8_t *)v_out_dma_buf[0], (NO_SYNC ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t *)v_out_dma_buf[0] + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity),
+  v_out_dma_buf[0] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
+  memset((uint8_t*)v_out_dma_buf[0], (NO_SYNC ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)v_out_dma_buf[0] + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity),
       h_sync_pulse);
   
   // Vertical sync pulse.
-  v_out_dma_buf[1] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
-  memset((uint8_t *)v_out_dma_buf[1], (V_SYNC ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t *)v_out_dma_buf[1] + h_sync_pulse_front, (VH_SYNC ^ video_mode.sync_polarity),
+  v_out_dma_buf[1] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
+  memset((uint8_t*)v_out_dma_buf[1], (V_SYNC ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)v_out_dma_buf[1] + h_sync_pulse_front, (VH_SYNC ^ video_mode.sync_polarity),
       h_sync_pulse);
 
   // Image line.
   v_out_dma_buf[2] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
-  memcpy((uint8_t *)v_out_dma_buf[2], (uint8_t *)v_out_dma_buf[0], whole_line);
+  memcpy((uint8_t*)v_out_dma_buf[2], (uint8_t*)v_out_dma_buf[0], whole_line);
 
   // Image line.
   v_out_dma_buf[3] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
-  memcpy((uint8_t *)v_out_dma_buf[3], (uint8_t *)v_out_dma_buf[0], whole_line);
+  memcpy((uint8_t*)v_out_dma_buf[3], (uint8_t*)v_out_dma_buf[0], whole_line);
 
   // PIO initialization.
   pio_sm_config c = pio_get_default_sm_config();
