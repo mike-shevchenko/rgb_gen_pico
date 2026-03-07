@@ -667,22 +667,28 @@ void draw_vert(int x_half, int y, int len, uint8_t color) {
 
 //-------------------------------------------------------------------------------------------------
 
-void draw_horz_rgb_line(int y) {
+enum class TwoMiddleStrokes { present, absent };
+void draw_horz_rgb_line(int y, TwoMiddleStrokes draw_two_middle_strokes = TwoMiddleStrokes::present) {
   static const int s = 16;
   draw_horz(s * 0, y, s, COLOR_RED);
   draw_horz(s * 1, y, s, COLOR_GREEN);
-  draw_horz(s * 2, y, s, COLOR_BLUE);
-  draw_horz(s * 3, y, s, COLOR_RED);
-  draw_horz(s * 4, y, s, COLOR_GREEN);
-  draw_horz(s * 5, y, s, COLOR_BLUE);
+  if (draw_two_middle_strokes == TwoMiddleStrokes::present) {
+    draw_horz(s * 2, y, s, COLOR_BLUE);
+    draw_horz(s * 3, y, s, COLOR_RED);
+    draw_horz(s * 4, y, s, COLOR_GREEN);
+    draw_horz(s * 5, y, s, COLOR_BLUE);
+  } else {  // Make the strokes next to the omitted ones shorter.
+    draw_horz(s * 2, y, s - 4, COLOR_BLUE);
+    draw_horz(s * 5 + 4, y, s - 4, COLOR_BLUE);
+  }
   draw_horz(s * 6, y, s, COLOR_RED);
   draw_horz(s * 7, y, s, COLOR_GREEN);
 }
 
 void draw_grid(void) {
-  // Draw a 2-pixel-wide frame around the screen.
-  draw_horz_rgb_line(0);
-  draw_horz_rgb_line(1);
+  // Draw a 2-pixel-wide frame around the screen, except over the "** AGAT **" text.
+  draw_horz_rgb_line(0, TwoMiddleStrokes::absent);
+  draw_horz_rgb_line(1, TwoMiddleStrokes::absent);
   draw_horz_rgb_line(254);
   draw_horz_rgb_line(255);
   draw_vert(0, 0, 256, COLOR_RED);
