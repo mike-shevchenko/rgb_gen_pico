@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Dev build",
+      "description": "Dev build",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "BUILD_ALL_RELEASES": "OFF"
+      }
+    },
+    {
+      "name": "release-variants",
+      "displayName": "Build releases",
+      "description": "Build firmware with all required combinations of options.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/release",
+      "cacheVariables": {
+        "BUILD_ALL_RELEASES": "ON"
+      }
+    }
+  ]
+}
