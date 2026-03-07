@@ -22,26 +22,24 @@
 //-------------------------------------------------------------------------------------------------
 // Config
 
-// Choose the hardware version.
-#if !defined(BOARD)  // Can be defined externally with -DBOARD=...
-  #define BOARD RGB2VGA
-  //#define BOARD MURMULATOR
-#endif // defined(BOARD)
-
-// Choose the sync polarity.
-#if !defined(SYNC)  // Can be defined externally with -DSYNC=...
-  #define SYNC NEG
-  //#define SYNC POS
-#endif // defined(BOARD)
-
-// The first VGA GPIO pin.
-#if (BOARD == RGB2VGA)
-  #define VGA_PIN_D0 8
-#elif (BOARD == MURMULATOR)
-  #define VGA_PIN_D0 6
-#else
-  #error "Unsupported BOARD macro value."
+// Choose the hardware version: -DBOARD=rgb2vga or -DBOARD=murmulator.
+#if !defined(BOARD)
+  #define BOARD rgb2vga
 #endif
+constexpr enum class BoardOption { rgb2vga, murmulator } kBoardOption = BoardOption::BOARD;
+
+// Choose the sync polarity: -DSYNC=pos or -DSYNC=neg.
+#if !defined(SYNC)
+  #define SYNC neg
+#endif
+constexpr enum class SyncOption { neg, pos } kSyncOption = SyncOption::SYNC;
+
+//-------------------------------------------------------------------------------------------------
+
+constexpr uint8_t kVgaGpioStart =
+  (kBoardOption == BoardOption::rgb2vga) ? 8 :
+  (kBoardOption == BoardOption::murmulator) ? 6 :
+  printf/*compile-time*/("Unexpected BoardOption");
 
 enum Color {
   COLOR_BLACK = 0,
@@ -115,13 +113,10 @@ constexpr VideoMode kVideoModeAgat7{
     .v_front_porch = 25,  // Vertical front porch. 
     .v_sync_pulse = 4,  // Vertical sync pulse, in TV lines (64 us each). +++
     .v_back_porch = 27,  // Vertical back porch.
-    #if (SYNC == NEG)
-      .sync_polarity = 0b11000000, // Negative sync polarity.
-    #elif (SYNC == POS)
-      .sync_polarity = 0b00000000, // Positive sync polarity.
-    #else
-      #error "Unsupported SYNC macro value."
-    #endif
+    .sync_polarity =
+        (kSyncOption == SyncOption::neg) ? 0b11000000 :
+        (kSyncOption == SyncOption::pos) ? 0b00000000 :
+        printf/*compile-time*/("Unexpected SyncOption"),
     .div = 1,  // Scan-doubling is not used.
 };
 static_assert(
@@ -430,7 +425,7 @@ void start_vga() {
   }
 
   // Set the VGA pins.
-  for (int i = VGA_PIN_D0; i < VGA_PIN_D0 + 8; ++i) {
+  for (int i = kVgaGpioStart; i < kVgaGpioStart + 8; ++i) {
     pio_gpio_init(PIO_VGA, i);
     gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_4MA);
     gpio_set_slew_rate(i, GPIO_SLEW_RATE_SLOW);
@@ -465,8 +460,8 @@ void start_vga() {
   offset = pio_add_program(PIO_VGA, &pio_vga_program);
   sm_config_set_wrap(&c, offset, offset + (pio_vga_program.length - 1));
 
-  sm_config_set_out_pins(&c, VGA_PIN_D0, 8);
-  pio_sm_set_consecutive_pindirs(PIO_VGA, SM_VGA, VGA_PIN_D0, 8, true);
+  sm_config_set_out_pins(&c, kVgaGpioStart, 8);
+  pio_sm_set_consecutive_pindirs(PIO_VGA, SM_VGA, kVgaGpioStart, 8, true);
 
   sm_config_set_out_shift(&c, true, true, 32);
   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
