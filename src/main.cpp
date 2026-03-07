@@ -95,6 +95,19 @@ constexpr video_mode_t mode_640x480_60Hz{
     .div = 2,
 };
 
+// PAL/SECAM standard:
+// Frame freq: 50 Hz (20 ms). Pulse width: 8 * 64 us = 512 us.
+// Line freq: 15625 Hz. Pulse width: 32 * (1 / pixel_clock) ~= 4.7 us.
+// Hsync pulse starts 11 us before the v-sync pulse.
+//
+// Agat-7:
+// Frame freq: 50.08 Hz (19.97 ms). Pulse width: 4 * 64 us = 256 us.
+// Line freq: 15625 Hz. Pulse width: 16 * (1 / pixel_clock) ~= 3.047 us.
+// hsync pulse starts 3 us after the vsync pulse.
+//
+// TODO: The current code makes the hsync pulse starts 11 us before the vsync pulse. The buffer
+//     layouts must be changed to allow adjusting this value, because currently the code can
+//     start the vsync pulse no earlier than the first visible pixel of a line.
 constexpr video_mode_t mode_agat7{
     .sys_freq = 126000,  // 126MHz system clock (keep same as PAL version).
     .pixel_freq = 5250000.0,  // 5.25MHz pixel clock (Agat-7 specification).
@@ -102,12 +115,12 @@ constexpr video_mode_t mode_agat7{
     .v_visible_area = 256,  // 256 visible lines (Agat-7 specification).
     .whole_line = 336,  // Total pixels per line (256 + porches + sync).
     .whole_frame = 312,  // Total lines per frame (PAL-compatible 50Hz).
-    .h_front_porch = 22,  // Horizontal front porch.
-    .h_sync_pulse = 32,  // Horizontal sync pulse.
-    .h_back_porch = 26,  // Horizontal back porch.
+    .h_front_porch = 22,  // Horizontal front porch, in pixels (1 / pixel_clock).
+    .h_sync_pulse = 16,  // Horizontal sync pulse, in pixels (1 / pixel_clock).
+    .h_back_porch = 42,  // Horizontal back porch, in pixels (1 / pixel_clock).
     .v_front_porch = 25,  // Vertical front porch. 
-    .v_sync_pulse = 8,  // Vertical sync pulse.
-    .v_back_porch = 23,  // Vertical back porch.
+    .v_sync_pulse = 4,  // Vertical sync pulse, in TV lines (64 us each). +++
+    .v_back_porch = 27,  // Vertical back porch.
     #if (SYNC == NEG)
       .sync_polarity = 0b11000000, // Negative sync polarity.
     #elif (SYNC == POS)
@@ -428,7 +441,7 @@ void start_vga(void)
 
   // Allocate memory for the line template definitions - individual allocations.
 
-  // Empty line.
+  // Line without a vertical sync pulse.
   v_out_dma_buf[0] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
   memset((uint8_t*)v_out_dma_buf[0], (NO_SYNC ^ video_mode.sync_polarity), whole_line);
   memset((uint8_t*)v_out_dma_buf[0] + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity),
