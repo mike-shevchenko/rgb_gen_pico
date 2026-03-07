@@ -28,6 +28,12 @@
 #endif
 constexpr enum class BoardOption { rgb2vga, murmulator } kBoardOption = BoardOption::BOARD;
 
+// Choose the video mode: -DMODE=agat7 or -DMODE=vga.
+#if !defined(MODE)
+  #define MODE agat7
+#endif
+constexpr enum class ModeOption { agat7, vga } kModeOption = ModeOption::MODE;
+
 // Choose the sync polarity: -DSYNC=pos or -DSYNC=neg.
 #if !defined(SYNC)
   #define SYNC neg
@@ -174,8 +180,6 @@ static uint32_t* v_out_dma_buf[4];
 static uint16_t palette[256];
 
 void __not_in_flash_func(memset32)(uint32_t* dst, const uint32_t data, uint32_t size);
-
-#if 0 // Original VGA code.
 
 void __not_in_flash_func(dma_handler_vga)()
 {
@@ -324,8 +328,6 @@ void __not_in_flash_func(dma_handler_vga)()
   dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[active_buf_idx], false);
 }
 
-#else // Agat-7 code.
-
 uint32_t* prepared_line_buffers[256];  // One buffer per line.
 
 void prepare_frame_buffer_lines() {
@@ -352,8 +354,7 @@ void prepare_frame_buffer_lines() {
   }
 }
 
-void __not_in_flash_func(dma_handler_vga)()
-{
+void __not_in_flash_func(dma_handler_agat7)() {
   static uint16_t y = 0;
 
   dma_hw->ints0 = 1u << dma_ch1;
@@ -377,8 +378,6 @@ void __not_in_flash_func(dma_handler_vga)()
     dma_channel_set_read_addr(dma_ch1, &prepared_line_buffers[y], false);
   }
 }
-
-#endif // 0
 
 void start_vga() {
   int whole_line = video_mode.whole_line / video_mode.div;
@@ -513,8 +512,14 @@ void start_vga() {
 
   dma_channel_set_irq0_enabled(dma_ch1, true);
 
-  // Configure the processor to run dma_handler() when DMA IRQ 0 is asserted.
-  irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_vga);
+  // Configure the processor to run the DMA handler when DMA IRQ 0 is asserted.
+  if (kModeOption == ModeOption::vga) {
+    irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_vga);
+  } else if (kModeOption == ModeOption::agat7) {
+    irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_agat7);
+  } else {
+    assert(false && "Unexpected ModeOption");
+  }
   irq_set_enabled(DMA_IRQ_0, true);
 
   dma_start_channel_mask((1u << dma_ch0));
@@ -768,7 +773,14 @@ int main(void) {
   draw_grid();
   draw_color_bars();
 
-  video_mode = mode_agat7;
+  if (kModeOption == ModeOption::vga) {
+    video_mode = kVideoModeVga640x480x60;
+  } else if (kModeOption == ModeOption::agat7) {
+    video_mode = kVideoModeAgat7;
+  } else {
+    assert(false && "Unexpected ModeOption");
+  };
+
   start_vga();
 
   prepare_frame_buffer_lines();
