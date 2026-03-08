@@ -113,12 +113,12 @@ constexpr VideoMode kVideoModeAgat7{
     .v_visible_area = 256,  // 256 visible lines.
     .whole_line = 336,  // Total pixels per line (256 + porches + sync).
     .whole_frame = 312,  // Total lines per frame (PAL-compatible 50Hz).
-    .h_front_porch = 22,  // Horizontal front porch, in pixels (1 / pixel_clock).
+    .h_front_porch = 20,  // Horizontal front porch, in pixels (1 / pixel_clock).
     .h_sync_pulse = 16,  // Horizontal sync pulse, in pixels (1 / pixel_clock).
-    .h_back_porch = 42,  // Horizontal back porch, in pixels (1 / pixel_clock).
-    .v_front_porch = 25,  // Vertical front porch. 
+    .h_back_porch = 44,  // Horizontal back porch, in pixels (1 / pixel_clock).
+    .v_front_porch = 28,  // Vertical front porch.
     .v_sync_pulse = 4,  // Vertical sync pulse, in TV lines (64 us each). +++
-    .v_back_porch = 27,  // Vertical back porch.
+    .v_back_porch = 24,  // Vertical back porch.
     .sync_polarity =
         (kSyncOption == SyncOption::neg) ? 0b11000000 :
         (kSyncOption == SyncOption::pos) ? 0b00000000 :
