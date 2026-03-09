@@ -1,3 +1,4 @@
+#include <format>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,12 @@
   #define BOARD rgb2vga
 #endif
 constexpr enum class BoardOption { rgb2vga, murmulator } kBoardOption = BoardOption::BOARD;
+std::string to_string(const BoardOption value) {
+  return
+    (value == BoardOption::rgb2vga) ? "RGB2VGA" :
+    (value == BoardOption::murmulator) ? "MURMULATOR" :
+    (/*compile-time error*/abort() /*operator comma*/, "Unexpected BoardOption");
+}
 
 // Choose the video mode: -DMODE=agat7 or -DMODE=vga.
 #if !defined(MODE)
@@ -39,6 +46,12 @@ constexpr enum class ModeOption { agat7, vga } kModeOption = ModeOption::MODE;
   #define SYNC neg
 #endif
 constexpr enum class SyncOption { neg, pos } kSyncOption = SyncOption::SYNC;
+std::string to_string(SyncOption value) {
+  return
+    (value == SyncOption::neg) ? "NEG" :
+    (value == SyncOption::pos) ? "POS" :
+    (/*compile-time error*/abort() /*operator comma*/, "Unexpected SyncOption");
+}
 
 //-------------------------------------------------------------------------------------------------
 
@@ -559,7 +572,7 @@ void init_text_buffer() {
 }
 
 // Print the string at text coordinates (0..31, 0..31).
-void print_colored_at(int text_x, int text_y, const char* str, uint8_t color) {
+void print_at(int text_x, int text_y, const char* str, uint8_t color = COLOR_GREEN) {
   if (text_y < 0 || text_y >= TEXT_ROWS) {
     return;
   }
@@ -585,10 +598,6 @@ void print_colored_at(int text_x, int text_y, const char* str, uint8_t color) {
     }
     ++ptr;
   }
-}
-
-void print_at(int text_x, int text_y, const char* str) {
-  print_colored_at(text_x, text_y, str, COLOR_GREEN);
 }
 
 // NOTE: Accounts for the margins.
@@ -664,32 +673,42 @@ void draw_vert(int x_half, int y, int len, uint8_t color) {
 
 //-------------------------------------------------------------------------------------------------
 
-enum class TwoMiddleStrokes { present, absent };
-void draw_horz_rgb_line(int y, TwoMiddleStrokes draw_two_middle_strokes = TwoMiddleStrokes::present) {
-  static const int s = 16;
-  draw_horz(s * 0, y, s, COLOR_RED);
-  draw_horz(s * 1, y, s, COLOR_GREEN);
-  if (draw_two_middle_strokes == TwoMiddleStrokes::present) {
-    draw_horz(s * 2, y, s, COLOR_BLUE);
-    draw_horz(s * 3, y, s, COLOR_RED);
-    draw_horz(s * 4, y, s, COLOR_GREEN);
-    draw_horz(s * 5, y, s, COLOR_BLUE);
-  } else {  // Make the strokes next to the omitted ones shorter.
-    draw_horz(s * 2, y, s - 4, COLOR_BLUE);
-    draw_horz(s * 5 + 4, y, s - 4, COLOR_BLUE);
+constexpr uint8_t kRgbLineColors[]{
+    COLOR_RED,
+    COLOR_GREEN,
+    COLOR_BLUE,
+};
+
+uint8_t rgb_line_color(int index) {
+  return kRgbLineColors[index % std::size(kRgbLineColors)];
+}
+
+enum class MiddleStrokes { present, absent };
+
+void draw_horz_rgb_line(int y, MiddleStrokes draw_middle_strokes = MiddleStrokes::present) {
+  constexpr int stroke_half_width = 8;
+  for (int stroke = 0; stroke < 16; ++stroke) {
+    if (stroke < 4 || stroke > 9 || draw_middle_strokes == MiddleStrokes::present) {
+      draw_horz(stroke_half_width * stroke, y, stroke_half_width, rgb_line_color(stroke));
+    }
   }
-  draw_horz(s * 6, y, s, COLOR_RED);
-  draw_horz(s * 7, y, s, COLOR_GREEN);
+}
+
+void draw_vert_rgb_line(int half_x) {
+  constexpr int stroke_height = 16;
+  for (int stroke = 0; stroke < 16; ++stroke) {
+    draw_vert(half_x, stroke * stroke_height, stroke_height, rgb_line_color(stroke));
+  }
 }
 
 void draw_grid(void) {
   // Draw a 2-pixel-wide frame around the screen, except over the "** AGAT **" text.
-  draw_horz_rgb_line(0, TwoMiddleStrokes::absent);
-  draw_horz_rgb_line(1, TwoMiddleStrokes::absent);
+  draw_horz_rgb_line(0, MiddleStrokes::absent);
+  draw_horz_rgb_line(1, MiddleStrokes::absent);
   draw_horz_rgb_line(254);
   draw_horz_rgb_line(255);
-  draw_vert(0, 0, 256, COLOR_RED);
-  draw_vert(127, 0, 256, COLOR_GREEN);
+  draw_vert_rgb_line(0);
+  draw_vert_rgb_line(127);
 }
 
 void draw_color_bars(void ) {
@@ -713,7 +732,7 @@ void draw_color_bars(void ) {
 };
   for (int bar = 0; bar < 16; ++bar) {
     for (int x_half = 0; x_half < 7; ++x_half) {  // Each bar will be 14 pixels wide.
-      draw_vert(8 + bar * 7 + x_half, 128, 32, colors[bar]);
+      draw_vert(8 + bar * 7 + x_half, 88, 16, colors[bar]);
     }
   }
 }
@@ -724,12 +743,11 @@ void print_some_text(void) {
   init_text_buffer();
 
   int y = -1;
-  print_at(11, ++y, "**      **");
-  print_colored_at(14, y, "agat", COLOR_RED);  // The lower-case letters yield Cyrillic (Russian).
+  print_at(8, ++y, "**      **");  // This label is not centered on the real Agat-7.
+  print_at(11, y, "agat", COLOR_RED);  // The lower-case letters yield Cyrillic (Russian).
+  print_at(0, ++y, "*1234567890123456789012345678901", COLOR_WHITE);  // Can be typed in Monitor.
   ++y;
-  ++y;
-  print_at(0, ++y, "GRAPHICS MODE: 256*256");
-  print_at(0, ++y, "TEXT MODE: 32*32 (7*8 => 224*256)");
+  print_at(0, ++y, "256*256; 32*32: 7*8=>224*256");
   ++y;
   // Print the complete font - 96 chars (32 x 3).
   for (int line = 0; line < 3; ++line) {
@@ -740,13 +758,22 @@ void print_some_text(void) {
     }
   }
   ++y;
-  print_at(0, ++y, "00000000001111111111222222222233");
-  print_at(0, ++y, "01234567890123456789012345678901");
-  ++y;
-  print_at(0, ++y, "....NORMAL..... ....BRIGHT.....");
-  ++y;
+  print_at(0, ++y, "/----NORMAL----\\/----BRIGHT----\\");
   print_at(0, ++y, "0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7");
-  y += 5;
+  y += 3;  // Reserve the space for color bars.
+  print_at(0, ++y, std::format("SYNC={}, BOARD={}",
+      to_string(kSyncOption), to_string(kBoardOption)).c_str(), COLOR_CYAN);
+  print_at(0, ++y, std::format("VS {}+{}+{}+{}={}, CPU {:.0f} MHZ",
+      video_mode.v_front_porch, video_mode.v_sync_pulse, video_mode.v_back_porch,
+      video_mode.v_visible_area, video_mode.whole_frame,
+      video_mode.sys_freq / 1000.0
+  ).c_str(), COLOR_YELLOW);
+  print_at(0, ++y, std::format("HS {}+{}+{}+{}={}, PX {:.2f} MHZ",
+      video_mode.h_front_porch, video_mode.h_sync_pulse, video_mode.h_back_porch,
+      video_mode.h_visible_area, video_mode.whole_line,
+      video_mode.pixel_freq / 1000000.0
+  ).c_str(), COLOR_WHITE);
+  ++y;
   print_at(0, ++y, "HTTPS://GITHUB.COM/");
   print_at(0, ++y, "  MIKE-SHEVCHENKO/RGB_GEN_PICO");
   ++y;
@@ -757,7 +784,9 @@ void print_some_text(void) {
   print_at(0, ++y, "  BY ALEX-EKB");
   ++y;
   print_at(0, ++y, "INSPIRED BY HTTP://MURMULATOR.RU");
-  
+
+  print_at(0, 30, "00000000000000000000000000000000", COLOR_WHITE);  // Can be typed in Monitor.
+
   render_text_buffer();
 }
 
@@ -769,10 +798,6 @@ int main(void) {
   sleep_ms(1000);  // Allow the USB UART to initialize for printf().
   printf("Started.\n");
 
-  print_some_text();
-  draw_grid();
-  draw_color_bars();
-
   if (kModeOption == ModeOption::vga) {
     video_mode = kVideoModeVga640x480x60;
   } else if (kModeOption == ModeOption::agat7) {
@@ -780,6 +805,10 @@ int main(void) {
   } else {
     assert(false && "Unexpected ModeOption");
   };
+
+  print_some_text();
+  draw_grid();
+  draw_color_bars();
 
   start_vga();
 

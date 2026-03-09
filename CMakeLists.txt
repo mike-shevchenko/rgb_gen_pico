@@ -65,8 +65,9 @@ function(set_up_pico_target TARGET_NAME)
         pico_stdlib
     )
 
-    target_compile_options(${TARGET_NAME} PRIVATE 
-        -O3 
+    target_compile_options(${TARGET_NAME} PRIVATE
+        -O3
+        -Wno-psabi  # Disable a compiler note about std::format().
     )
 
     # Add firmware version definition if provided via CMake
