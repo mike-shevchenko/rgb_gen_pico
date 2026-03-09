@@ -347,20 +347,20 @@ void prepare_frame_buffer_lines() {
   int whole_line = video_mode.whole_line / video_mode.div;
   int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
   int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
-    
+
   // Prepare all 256 lines (0..255) from the frame buffer.
   for (int y = 0; y < 256; y++) {
     prepared_line_buffers[y] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
     uint8_t* line_bytes = (uint8_t*)prepared_line_buffers[y];
-        
+
     // Fill with the sync pattern.
     memset(line_bytes, (NO_SYNC ^ video_mode.sync_polarity), whole_line);
     memset(line_bytes + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity), h_sync_pulse);
-        
+
     // Convert the frame buffer line through the palette.
     const uint8_t* const scr_line = &g_v_buf[y * (V_BUF_W / 2)];
     uint16_t* const line_buf = (uint16_t*)prepared_line_buffers[y];
-        
+
     for (int x = 0; x < V_BUF_W / 2; x++) {
       line_buf[x] = palette[scr_line[x]];
     }
@@ -450,7 +450,7 @@ void start_vga() {
   memset((uint8_t*)v_out_dma_buf[0], (NO_SYNC ^ video_mode.sync_polarity), whole_line);
   memset((uint8_t*)v_out_dma_buf[0] + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity),
       h_sync_pulse);
-  
+
   // Vertical sync pulse.
   v_out_dma_buf[1] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
   memset((uint8_t*)v_out_dma_buf[1], (V_SYNC ^ video_mode.sync_polarity), whole_line);
@@ -576,10 +576,10 @@ void print_at(int text_x, int text_y, const char* str, uint8_t color = COLOR_GRE
   if (text_y < 0 || text_y >= TEXT_ROWS) {
     return;
   }
-  
+
   int col = text_x;
   const char* ptr = str;
-  
+
   while (*ptr && col < TEXT_COLS) {
     if (*ptr == '\n') {
       // Move to the next line.
@@ -606,25 +606,25 @@ void render_char_at_text_pos(int text_x, int text_y, char c, uint8_t color) {
     // Support only printable ASCII and 127.
     return;
   }
-  
+
   const int char_index = c - 32;
-  
+
   // Calculate pixel position with margin
   const int base_pixel_x = H_MARGIN + (text_x * CHAR_WIDTH);
   const int base_pixel_y = V_MARGIN + (text_y * CHAR_HEIGHT);
-  
+
   for (int row = 0; row < 8; row++) {
     const uint8_t char_line = agat7_font[char_index][row];
-      
+
     for (int col = 0; col < 7; col++) {  // 7 pixels wide.
       if (char_line & (1 << (7 - col))) { // Test the bit (MSb first).
         const int screen_x = base_pixel_x + col;
         const int screen_y = base_pixel_y + row;
-        
+
         // Make sure we're within the physical screen bounds.
-        if (screen_x >= 0 && screen_x < V_BUF_W && 
+        if (screen_x >= 0 && screen_x < V_BUF_W &&
             screen_y >= 0 && screen_y < V_BUF_H) {
-            
+
           const int buf_index = screen_y * (V_BUF_W / 2) + screen_x / 2;
           if (screen_x & 1) {
             g_v_buf[buf_index] = (g_v_buf[buf_index] & 0x0F) | (color << 4);
@@ -739,7 +739,7 @@ void draw_color_bars(void ) {
 
 void print_some_text(void) {
   memset(g_v_buf, 0, V_BUF_SZ);
-  
+
   init_text_buffer();
 
   int y = -1;

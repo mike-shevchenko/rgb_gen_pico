@@ -57,11 +57,11 @@ function(set_up_pico_target TARGET_NAME)
 
     # Add any user requested libraries
     target_link_libraries(${TARGET_NAME}
-        hardware_pio 
-        hardware_dma 
-        hardware_flash 
-        pico_multicore 
-        pico_unique_id  
+        hardware_pio
+        hardware_dma
+        hardware_flash
+        pico_multicore
+        pico_unique_id
         pico_stdlib
     )
 
@@ -110,12 +110,12 @@ if(BUILD_ALL_RELEASES)
 
     function(add_release BOARD SYNC)
         set(ARTIFACT_NAME "${EXECUTABLE_NAME}_${GIT_TAG}_${BOARD}_sync_${SYNC}")
-        
+
         set_up_pico_target(${ARTIFACT_NAME})
-        
-        target_compile_definitions(${ARTIFACT_NAME} PRIVATE 
-            BOARD=${BOARD} 
-            SYNC=${SYNC} 
+
+        target_compile_definitions(${ARTIFACT_NAME} PRIVATE
+            BOARD=${BOARD}
+            SYNC=${SYNC}
             FW_VERSION="${GIT_TAG}"
         )
     endfunction()
