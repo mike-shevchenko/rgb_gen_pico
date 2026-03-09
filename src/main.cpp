@@ -63,6 +63,14 @@ constexpr uint8_t kVgaGpioStart =
   (kBoardOption == BoardOption::murmulator) ? 6 :
   printf/*compile-time error*/("Unexpected BoardOption");
 
+// Sync pulse patterns (positive polarity).
+constexpr uint8_t kNoSync = 0b00000000;
+constexpr uint8_t kVSync = 0b10000000;
+constexpr uint8_t kHSync = 0b01000000;
+constexpr uint8_t kVHSync = 0b11000000;
+constexpr uint8_t kSyncPolatiryMaskPositive = kNoSync;  // Invert no bits.
+constexpr uint8_t kSyncPolatiryMaskNegative = kVHSync;  // Invert both H and V sync bits.
+
 enum Color {
   COLOR_BLACK = 0,
   COLOR_RED = 0x04,
@@ -76,20 +84,20 @@ enum Color {
 };
 
 struct VideoMode {
-  uint32_t sys_freq;
-  float pixel_freq;
-  uint16_t h_visible_area;
-  uint16_t v_visible_area;
-  uint16_t whole_line;
-  uint16_t whole_frame;
-  uint8_t h_front_porch;
-  uint8_t h_sync_pulse;
-  uint8_t h_back_porch;
-  uint8_t v_front_porch;
-  uint8_t v_sync_pulse;
-  uint8_t v_back_porch;
-  uint8_t sync_polarity;
-  uint8_t div;
+  uint32_t sys_freq;  // CPU core clock in kHz.
+  float pixel_freq;  // Pixel clock in Hz.
+  uint16_t h_visible_area;  // Number of visible pixels per line.
+  uint16_t v_visible_area;  // Number of visible lines per frame.
+  uint16_t whole_line;  // Total pixels per line (v_visible_area + v_porches + v_sync).
+  uint16_t whole_frame;  // Total lines per frame.
+  uint8_t h_front_porch;  // Horizontal front porch, in pixels.
+  uint8_t h_sync_pulse;  // Horizontal sync pulse width, in pixels.
+  uint8_t h_back_porch;  // Horizontal back porch, in pixels.
+  uint8_t v_front_porch;  // Vertical front porch, in TV lines (64 us each).
+  uint8_t v_sync_pulse;  // Vertical sync pulse, in TV lines (64 us each).
+  uint8_t v_back_porch;  // Vertical back porch, in TV lines (64 us each).
+  uint8_t sync_polarity;  // Bit mask having 1 in positions to be inverted for a negative sync.
+  uint8_t div;  // Coefficient of scan-doubling/tripling/etc.
 };
 
 constexpr VideoMode kVideoModeVga640x480x60{
@@ -105,7 +113,7 @@ constexpr VideoMode kVideoModeVga640x480x60{
     .v_front_porch = 10,
     .v_sync_pulse = 2,
     .v_back_porch = 33,
-    .sync_polarity = 0b11000000, // negative
+    .sync_polarity = kSyncPolatiryMaskNegative,
     .div = 2,
 };
 
@@ -123,21 +131,21 @@ constexpr VideoMode kVideoModeVga640x480x60{
 //     layouts must be changed to allow adjusting this value, because currently the code can
 //     start the vsync pulse no earlier than the first visible pixel of a line.
 constexpr VideoMode kVideoModeAgat7{
-    .sys_freq = 126000,  // System clock in kHz.
-    .pixel_freq = 5250000.0,  // Pixel clock in Hz.
+    .sys_freq = 126000,
+    .pixel_freq = 5250000.0,
     .h_visible_area = 256,
     .v_visible_area = 256,
-    .whole_line = 336,  // Total pixels per line (256 + porches + sync).
-    .whole_frame = 312,  // Total lines per frame (PAL-compatible 50Hz).
-    .h_front_porch = 20,  // Horizontal front porch, in pixels (1 / pixel_clock).
-    .h_sync_pulse = 16,  // Horizontal sync pulse, in pixels (1 / pixel_clock).
-    .h_back_porch = 44,  // Horizontal back porch, in pixels (1 / pixel_clock).
-    .v_front_porch = 28,  // Vertical front porch.
-    .v_sync_pulse = 4,  // Vertical sync pulse, in TV lines (64 us each). +++
-    .v_back_porch = 24,  // Vertical back porch.
+    .whole_line = 336,
+    .whole_frame = 312,
+    .h_front_porch = 20,
+    .h_sync_pulse = 16,
+    .h_back_porch = 44,
+    .v_front_porch = 28,
+    .v_sync_pulse = 4,
+    .v_back_porch = 24,
     .sync_polarity =
-        (kSyncOption == SyncOption::neg) ? 0b11000000 :
-        (kSyncOption == SyncOption::pos) ? 0b00000000 :
+        (kSyncOption == SyncOption::neg) ? kSyncPolatiryMaskNegative :
+        (kSyncOption == SyncOption::pos) ? kSyncPolatiryMaskPositive :
         printf/*compile-time error*/("Unexpected SyncOption"),
     .div = 1,  // Scan-doubling is not used.
 };
@@ -175,12 +183,6 @@ uint8_t g_v_buf[V_BUF_SZ];
 
 //-------------------------------------------------------------------------------------------------
 // VGA
-
-// Sync pulse patterns (positive polarity).
-#define NO_SYNC 0b00000000
-#define V_SYNC 0b10000000
-#define H_SYNC 0b01000000
-#define VH_SYNC 0b11000000
 
 static int dma_ch0;
 static int dma_ch1;
@@ -311,7 +313,9 @@ void __not_in_flash_func(dma_handler_vga)()
     return;
   }
 
-  uint16_t scaled_y = (y - v_margin) / video_mode.div; // represents the line in the original captured image
+  // Represents the line in the original captured image.
+  uint16_t scaled_y = (y - v_margin) / video_mode.div;
+
   uint8_t* scr_line = &scr_buffer[scaled_y * (V_BUF_W / 2)];
   uint16_t* line_buf = (uint16_t*)v_out_dma_buf[active_buf_idx];
 
@@ -357,8 +361,8 @@ void prepare_frame_buffer_lines() {
     uint8_t* line_bytes = (uint8_t*)prepared_line_buffers[y];
 
     // Fill with the sync pattern.
-    memset(line_bytes, (NO_SYNC ^ video_mode.sync_polarity), whole_line);
-    memset(line_bytes + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity), h_sync_pulse);
+    memset(line_bytes, (kNoSync ^ video_mode.sync_polarity), whole_line);
+    memset(line_bytes + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity), h_sync_pulse);
 
     // Convert the frame buffer line through the palette.
     const uint8_t* const scr_line = &g_v_buf[y * (V_BUF_W / 2)];
@@ -434,8 +438,8 @@ void start_vga() {
       uint8_t Bj = ((j >> 0) & 1) ? (Yj ? 0b00110000 : 0b00100000) : 0;
 
       palette[(i * 16) + j] =
-          ((uint16_t)(Ri | Gi | Bi | (NO_SYNC ^ video_mode.sync_polarity)) << 8)
-          | (Rj | Gj | Bj | (NO_SYNC ^ video_mode.sync_polarity));
+          ((uint16_t)(Ri | Gi | Bi | (kNoSync ^ video_mode.sync_polarity)) << 8)
+          | (Rj | Gj | Bj | (kNoSync ^ video_mode.sync_polarity));
     }
   }
 
@@ -450,14 +454,14 @@ void start_vga() {
 
   // Line without a vertical sync pulse.
   v_out_dma_buf[0] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
-  memset((uint8_t*)v_out_dma_buf[0], (NO_SYNC ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)v_out_dma_buf[0] + h_sync_pulse_front, (H_SYNC ^ video_mode.sync_polarity),
+  memset((uint8_t*)v_out_dma_buf[0], (kNoSync ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)v_out_dma_buf[0] + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity),
       h_sync_pulse);
 
   // Vertical sync pulse.
   v_out_dma_buf[1] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
-  memset((uint8_t*)v_out_dma_buf[1], (V_SYNC ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)v_out_dma_buf[1] + h_sync_pulse_front, (VH_SYNC ^ video_mode.sync_polarity),
+  memset((uint8_t*)v_out_dma_buf[1], (kVSync ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)v_out_dma_buf[1] + h_sync_pulse_front, (kVHSync ^ video_mode.sync_polarity),
       h_sync_pulse);
 
   // Image line.
