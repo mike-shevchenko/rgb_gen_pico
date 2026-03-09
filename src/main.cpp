@@ -58,7 +58,7 @@ std::string to_string(SyncOption value) {
 constexpr uint8_t kVgaGpioStart =
   (kBoardOption == BoardOption::rgb2vga) ? 8 :
   (kBoardOption == BoardOption::murmulator) ? 6 :
-  printf/*compile-time*/("Unexpected BoardOption");
+  printf/*compile-time error*/("Unexpected BoardOption");
 
 enum Color {
   COLOR_BLACK = 0,
@@ -120,10 +120,10 @@ constexpr VideoMode kVideoModeVga640x480x60{
 //     layouts must be changed to allow adjusting this value, because currently the code can
 //     start the vsync pulse no earlier than the first visible pixel of a line.
 constexpr VideoMode kVideoModeAgat7{
-    .sys_freq = 126000,  // 126 MHz system clock.
-    .pixel_freq = 5250000.0,  // 5.25 MHz pixel clock.
-    .h_visible_area = 256,  // 256 visible pixels.
-    .v_visible_area = 256,  // 256 visible lines.
+    .sys_freq = 126000,  // System clock in kHz.
+    .pixel_freq = 5250000.0,  // Pixel clock in Hz.
+    .h_visible_area = 256,
+    .v_visible_area = 256,
     .whole_line = 336,  // Total pixels per line (256 + porches + sync).
     .whole_frame = 312,  // Total lines per frame (PAL-compatible 50Hz).
     .h_front_porch = 20,  // Horizontal front porch, in pixels (1 / pixel_clock).
@@ -135,7 +135,7 @@ constexpr VideoMode kVideoModeAgat7{
     .sync_polarity =
         (kSyncOption == SyncOption::neg) ? 0b11000000 :
         (kSyncOption == SyncOption::pos) ? 0b00000000 :
-        printf/*compile-time*/("Unexpected SyncOption"),
+        printf/*compile-time error*/("Unexpected SyncOption"),
     .div = 1,  // Scan-doubling is not used.
 };
 static_assert(
@@ -712,7 +712,7 @@ void draw_grid(void) {
 }
 
 void draw_color_bars(void ) {
-  const uint8_t colors[] = {  // Agat-7 color sequence.
+  constexpr uint8_t colors[]{  // Agat-7 color sequence.
       COLOR_BLACK,
       COLOR_RED,
       COLOR_GREEN,
@@ -790,7 +790,7 @@ void print_some_text(void) {
   render_text_buffer();
 }
 
-int main(void) {
+int main() {
   vreg_set_voltage(VREG_VOLTAGE_1_25);
   sleep_ms(100);
 
