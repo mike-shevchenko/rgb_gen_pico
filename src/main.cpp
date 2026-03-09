@@ -27,7 +27,8 @@
 #if !defined(BOARD)
   #define BOARD rgb2vga
 #endif
-constexpr enum class BoardOption { rgb2vga, murmulator } kBoardOption = BoardOption::BOARD;
+enum class BoardOption { rgb2vga, murmulator };
+constexpr auto kBoardOption = BoardOption::BOARD;
 std::string to_string(const BoardOption value) {
   return
     (value == BoardOption::rgb2vga) ? "RGB2VGA" :
@@ -39,13 +40,15 @@ std::string to_string(const BoardOption value) {
 #if !defined(MODE)
   #define MODE agat7
 #endif
-constexpr enum class ModeOption { agat7, vga } kModeOption = ModeOption::MODE;
+enum class ModeOption { agat7, vga };
+constexpr auto kModeOption = ModeOption::MODE;
 
 // Choose the sync polarity: -DSYNC=pos or -DSYNC=neg.
 #if !defined(SYNC)
   #define SYNC neg
 #endif
-constexpr enum class SyncOption { neg, pos } kSyncOption = SyncOption::SYNC;
+enum class SyncOption { neg, pos };
+constexpr auto kSyncOption = SyncOption::SYNC;
 std::string to_string(SyncOption value) {
   return
     (value == SyncOption::neg) ? "NEG" :
