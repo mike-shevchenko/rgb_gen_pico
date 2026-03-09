@@ -20,6 +20,16 @@
 
 #include "agat7_font.h"
 
+// TODO:
+// - Draw ASCII diagrams for all modes.
+// - Add comments explaining the TV scan principles.
+// - Add a PAL/SECAM Field 1 standard mode: 52 us, 313 lines, 288 visible lines.
+// - Refactor to use a complete time frame buffer starting with v-front-porch, lines starting with
+//   h-front-porch.
+//   - In VGA mode, draw the entire buffer in the middle, visualizing the porches/pulses amd
+//     printing all the parameters.
+//   - For drawing, supply a line-start-array, each ptr shifted after the h-back-porch.
+
 //-------------------------------------------------------------------------------------------------
 // Config
 
