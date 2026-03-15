@@ -1,4 +1,3 @@
-#include <format>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +17,11 @@
 
 #include "../build/programs.pio.h"
 
-#include "agat7_font.h"
+#include "agat7_picture.h"
+#include "agat7_renderer.h"
+#include "config.h"
+#include "video_mode.h"
+#include "vram.h"
 
 // TODO:
 // - Draw ASCII diagrams for all modes.
@@ -31,47 +34,11 @@
 //   - For drawing, supply a line-start-array, each ptr shifted after the h-back-porch.
 
 //-------------------------------------------------------------------------------------------------
-// Config
-
-// Choose the hardware version: -DBOARD=rgb2vga or -DBOARD=murmulator.
-#if !defined(BOARD)
-  #define BOARD rgb2vga
-#endif
-enum class BoardOption { rgb2vga, murmulator };
-constexpr auto kBoardOption = BoardOption::BOARD;
-std::string to_string(const BoardOption value) {
-  return
-    (value == BoardOption::rgb2vga) ? "RGB2VGA" :
-    (value == BoardOption::murmulator) ? "MURMULATOR" :
-    (/*compile-time error*/abort() /*operator comma*/, "Unexpected BoardOption");
-}
-
-// Choose the video mode: -DMODE=agat7 or -DMODE=vga.
-#if !defined(MODE)
-  #define MODE agat7
-#endif
-enum class ModeOption { agat7, vga };
-constexpr auto kModeOption = ModeOption::MODE;
-
-// Choose the sync polarity: -DSYNC=pos or -DSYNC=neg.
-#if !defined(SYNC)
-  #define SYNC neg
-#endif
-enum class SyncOption { neg, pos };
-constexpr auto kSyncOption = SyncOption::SYNC;
-std::string to_string(SyncOption value) {
-  return
-    (value == SyncOption::neg) ? "NEG" :
-    (value == SyncOption::pos) ? "POS" :
-    (/*compile-time error*/abort() /*operator comma*/, "Unexpected SyncOption");
-}
-
-//-------------------------------------------------------------------------------------------------
 
 constexpr uint8_t kVgaGpioStart =
-  (kBoardOption == BoardOption::rgb2vga) ? 8 :
-  (kBoardOption == BoardOption::murmulator) ? 6 :
-  printf/*compile-time error*/("Unexpected BoardOption");
+  (Config::kBoard == Config::Board::rgb2vga) ? 8 :
+  (Config::kBoard == Config::Board::murmulator) ? 6 :
+  printf/*compile-time error*/("Unexpected BOARD\n");
 
 // Sync pulse patterns (positive polarity).
 constexpr uint8_t kNoSync = 0b00000000;
@@ -80,35 +47,6 @@ constexpr uint8_t kHSync = 0b01000000;
 constexpr uint8_t kVHSync = 0b11000000;
 constexpr uint8_t kSyncPolatiryMaskPositive = kNoSync;  // Invert no bits.
 constexpr uint8_t kSyncPolatiryMaskNegative = kVHSync;  // Invert both H and V sync bits.
-
-enum Color {
-  COLOR_BLACK = 0,
-  COLOR_RED = 0x04,
-  COLOR_GREEN = 0x02,
-  COLOR_BLUE = 0x01,
-  COLOR_MAGENTA = COLOR_RED | COLOR_BLUE,
-  COLOR_YELLOW = COLOR_RED | COLOR_GREEN,
-  COLOR_CYAN = COLOR_BLUE | COLOR_GREEN,
-  COLOR_WHITE = COLOR_RED | COLOR_GREEN | COLOR_BLUE,
-  COLOR_BRIGHT = 8  // To be added to other colors.
-};
-
-struct VideoMode {
-  uint32_t sys_freq;  // CPU core clock in kHz.
-  float pixel_freq;  // Pixel clock in Hz.
-  uint16_t h_visible_area;  // Number of visible pixels per line.
-  uint16_t v_visible_area;  // Number of visible lines per frame.
-  uint16_t whole_line;  // Total pixels per line (v_visible_area + v_porches + v_sync).
-  uint16_t whole_frame;  // Total lines per frame.
-  uint8_t h_front_porch;  // Horizontal front porch, in pixels.
-  uint8_t h_sync_pulse;  // Horizontal sync pulse width, in pixels.
-  uint8_t h_back_porch;  // Horizontal back porch, in pixels.
-  uint8_t v_front_porch;  // Vertical front porch, in TV lines (64 us each).
-  uint8_t v_sync_pulse;  // Vertical sync pulse, in TV lines (64 us each).
-  uint8_t v_back_porch;  // Vertical back porch, in TV lines (64 us each).
-  uint8_t sync_polarity;  // Bit mask having 1 in positions to be inverted for a negative sync.
-  uint8_t div;  // Coefficient of scan-doubling/tripling/etc.
-};
 
 constexpr VideoMode kVideoModeVga640x480x60{
     .sys_freq = 252000,
@@ -154,9 +92,9 @@ constexpr VideoMode kVideoModeAgat7{
     .v_sync_pulse = 4,
     .v_back_porch = 24,
     .sync_polarity =
-        (kSyncOption == SyncOption::neg) ? kSyncPolatiryMaskNegative :
-        (kSyncOption == SyncOption::pos) ? kSyncPolatiryMaskPositive :
-        printf/*compile-time error*/("Unexpected SyncOption"),
+        (Config::kSync == Config::Sync::neg) ? kSyncPolatiryMaskNegative :
+        (Config::kSync == Config::Sync::pos) ? kSyncPolatiryMaskPositive :
+        printf/*compile-time error*/("Unexpected SYNC\n"),
     .div = 1,  // Scan-doubling is not used.
 };
 static_assert(
@@ -189,7 +127,8 @@ static_assert(
 #define V_BUF_H 256  // For the VGA version: 304
 #define V_BUF_SZ (V_BUF_H * V_BUF_W / 2)  // 2 pixels per byte
 
-uint8_t g_v_buf[V_BUF_SZ];
+static Vram vram(/*width_px=*/256, /*height=*/256);
+static Agat7Renderer agat7_renderer(vram);
 
 //-------------------------------------------------------------------------------------------------
 // VGA
@@ -222,7 +161,7 @@ void __not_in_flash_func(dma_handler_vga)()
   if (y == video_mode.whole_frame)
   {
     y = 0;
-    scr_buffer = g_v_buf;
+    scr_buffer = vram.Line(0).data();
   }
 
   if (y >= video_mode.v_visible_area && y < (video_mode.v_visible_area + video_mode.v_front_porch))
@@ -375,7 +314,7 @@ void prepare_frame_buffer_lines() {
     memset(line_bytes + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity), h_sync_pulse);
 
     // Convert the frame buffer line through the palette.
-    const uint8_t* const scr_line = &g_v_buf[y * (V_BUF_W / 2)];
+    const uint8_t* const scr_line = vram.Line(y).data();
     uint16_t* const line_buf = (uint16_t*)prepared_line_buffers[y];
 
     for (int x = 0; x < V_BUF_W / 2; x++) {
@@ -543,12 +482,12 @@ void start_vga() {
   dma_channel_set_irq0_enabled(dma_ch1, true);
 
   // Configure the processor to run the DMA handler when DMA IRQ 0 is asserted.
-  if (kModeOption == ModeOption::vga) {
+  if (Config::kMode == Config::Mode::vga) {
     irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_vga);
-  } else if (kModeOption == ModeOption::agat7) {
+  } else if (Config::kMode == Config::Mode::agat7) {
     irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_agat7);
   } else {
-    assert(false && "Unexpected ModeOption");
+    assert(!"Unexpected MODE");
   }
   irq_set_enabled(DMA_IRQ_0, true);
 
@@ -556,256 +495,6 @@ void start_vga() {
 }
 
 //-------------------------------------------------------------------------------------------------
-// Agat-7 text mode.
-
-// Agat-7 display parameters.
-#define PHYSICAL_WIDTH 256  // Physical video signal width.
-#define PHYSICAL_HEIGHT 256  // Physical video signal height.
-#define TEXT_COLS 32  // 32 characters per line.
-#define TEXT_ROWS 32  // 32 lines (full height used).
-#define CHAR_WIDTH 7  // 7 pixels per character (no spacing in text area).
-#define CHAR_HEIGHT 8   // 8 pixels per character.
-
-// Text area dimensions.
-#define TEXT_AREA_WIDTH (TEXT_COLS * CHAR_WIDTH)  // 224 pixels.
-#define TEXT_AREA_HEIGHT (TEXT_ROWS * CHAR_HEIGHT)  // 256 pixels.
-
-// Centering margins.
-#define H_MARGIN ((PHYSICAL_WIDTH - TEXT_AREA_WIDTH) / 2)  // 16 pixels on each side.
-#define V_MARGIN ((PHYSICAL_HEIGHT - TEXT_AREA_HEIGHT) / 2)  // 0 pixels (full height).
-
-// Text buffer for 32x32 characters.
-char text_buffer[TEXT_ROWS][TEXT_COLS + 1];  // +1 for null terminator per row.
-uint8_t text_color[TEXT_ROWS][TEXT_COLS];
-
-void init_text_buffer() {
-  for (int row = 0; row < TEXT_ROWS; row++) {
-    for (int col = 0; col < TEXT_COLS; col++) {
-      text_buffer[row][col] = ' ';  // Fill with spaces.
-      text_color[row][col] = COLOR_WHITE;
-    }
-    text_buffer[row][TEXT_COLS] = '\0';  // Null-terminate each row.
-  }
-}
-
-// Print the string at text coordinates (0..31, 0..31).
-void print_at(int text_x, int text_y, const char* str, uint8_t color = COLOR_GREEN) {
-  if (text_y < 0 || text_y >= TEXT_ROWS) {
-    return;
-  }
-
-  int col = text_x;
-  const char* ptr = str;
-
-  while (*ptr && col < TEXT_COLS) {
-    if (*ptr == '\n') {
-      // Move to the next line.
-      ++text_y;
-      col = text_x;
-      if (text_y >= TEXT_ROWS) {
-        break;
-      }
-    } else {
-      // Place the character to the buffer.
-      if (col >= 0) {
-        text_buffer[text_y][col] = *ptr;
-        text_color[text_y][col] = color;
-      }
-      ++col;
-    }
-    ++ptr;
-  }
-}
-
-// NOTE: Accounts for the margins.
-void render_char_at_text_pos(int text_x, int text_y, char c, uint8_t color) {
-  if (c < 32 || c > 127) {
-    // Support only printable ASCII and 127.
-    return;
-  }
-
-  const int char_index = c - 32;
-
-  // Calculate pixel position with margin
-  const int base_pixel_x = H_MARGIN + (text_x * CHAR_WIDTH);
-  const int base_pixel_y = V_MARGIN + (text_y * CHAR_HEIGHT);
-
-  for (int row = 0; row < 8; row++) {
-    const uint8_t char_line = agat7_font()[char_index][row];
-
-    for (int col = 0; col < 7; col++) {  // 7 pixels wide.
-      if (char_line & (1 << (7 - col))) { // Test the bit (MSb first).
-        const int screen_x = base_pixel_x + col;
-        const int screen_y = base_pixel_y + row;
-
-        // Make sure we're within the physical screen bounds.
-        if (screen_x >= 0 && screen_x < V_BUF_W &&
-            screen_y >= 0 && screen_y < V_BUF_H) {
-
-          const int buf_index = screen_y * (V_BUF_W / 2) + screen_x / 2;
-          if (screen_x & 1) {
-            g_v_buf[buf_index] = (g_v_buf[buf_index] & 0x0F) | (color << 4);
-          } else {
-            g_v_buf[buf_index] = (g_v_buf[buf_index] & 0xF0) | (color & 0x0F);
-          }
-        }
-      }
-    }
-  }
-}
-
-// Render the entire text buffer to the video buffer (with the proper margins).
-void render_text_buffer() {
-  for (int text_row = 0; text_row < TEXT_ROWS; text_row++) {
-    for (int text_col = 0; text_col < TEXT_COLS; text_col++) {
-      const char c = text_buffer[text_row][text_col];
-      render_char_at_text_pos(text_col, text_row, c, text_color[text_row][text_col]);
-    }
-  }
-}
-
-void draw_horz(int x_half, int y, int len_half, uint8_t color) {
-  if (x_half < 0 || len_half <= 0 || x_half + len_half > V_BUF_W / 2) {
-    printf("%s(): Invalid coordinates: x_half %d, y %d, len_half %d.\n",
-        __func__, x_half, y, len_half);
-    return;
-  }
-  for (int b = x_half; b < x_half + len_half; ++b) {
-    const int buf_index = y * (V_BUF_W / 2) + b;
-    g_v_buf[buf_index] = (color & 0xF) | (color << 4);  // Fill two consecutive pixels.
-  }
-}
-
-void draw_vert(int x_half, int y, int len, uint8_t color) {
-  if (x_half < 0 || len <= 0 || y + len > V_BUF_H) {
-    printf("%s(): Invalid coordinates: x_half %d, y %d, len %d.\n",
-        __func__, x_half, y, len);
-    return;
-  }
-  for (int line = y; line < y + len; ++line) {
-    const int buf_index = line * (V_BUF_W / 2) + x_half;
-    g_v_buf[buf_index] = (color & 0xF) | (color << 4);  // Fill two consecutive pixels.
-  }
-}
-
-//-------------------------------------------------------------------------------------------------
-
-constexpr uint8_t kRgbLineColors[]{
-    COLOR_RED,
-    COLOR_GREEN,
-    COLOR_BLUE,
-};
-
-uint8_t rgb_line_color(int index) {
-  return kRgbLineColors[index % std::size(kRgbLineColors)];
-}
-
-enum class MiddleStrokes { present, absent };
-
-void draw_horz_rgb_line(int y, MiddleStrokes draw_middle_strokes = MiddleStrokes::present) {
-  constexpr int stroke_half_width = 8;
-  for (int stroke = 0; stroke < 16; ++stroke) {
-    if (stroke < 4 || stroke > 9 || draw_middle_strokes == MiddleStrokes::present) {
-      draw_horz(stroke_half_width * stroke, y, stroke_half_width, rgb_line_color(stroke));
-    }
-  }
-}
-
-void draw_vert_rgb_line(int half_x) {
-  constexpr int stroke_height = 16;
-  for (int stroke = 0; stroke < 16; ++stroke) {
-    draw_vert(half_x, stroke * stroke_height, stroke_height, rgb_line_color(stroke));
-  }
-}
-
-void draw_grid(void) {
-  // Draw a 2-pixel-wide frame around the screen, except over the "** AGAT **" text.
-  draw_horz_rgb_line(0, MiddleStrokes::absent);
-  draw_horz_rgb_line(1, MiddleStrokes::absent);
-  draw_horz_rgb_line(254);
-  draw_horz_rgb_line(255);
-  draw_vert_rgb_line(0);
-  draw_vert_rgb_line(127);
-}
-
-void draw_color_bars(void ) {
-  constexpr uint8_t colors[]{  // Agat-7 color sequence.
-      COLOR_BLACK,
-      COLOR_RED,
-      COLOR_GREEN,
-      COLOR_YELLOW,
-      COLOR_BLUE,
-      COLOR_MAGENTA,
-      COLOR_CYAN,
-      COLOR_WHITE,
-      COLOR_BLACK + COLOR_BRIGHT,
-      COLOR_RED + COLOR_BRIGHT,
-      COLOR_GREEN + COLOR_BRIGHT,
-      COLOR_YELLOW + COLOR_BRIGHT,
-      COLOR_BLUE + COLOR_BRIGHT,
-      COLOR_MAGENTA + COLOR_BRIGHT,
-      COLOR_CYAN + COLOR_BRIGHT,
-      COLOR_WHITE + COLOR_BRIGHT,
-};
-  for (int bar = 0; bar < 16; ++bar) {
-    for (int x_half = 0; x_half < 7; ++x_half) {  // Each bar will be 14 pixels wide.
-      draw_vert(8 + bar * 7 + x_half, 88, 16, colors[bar]);
-    }
-  }
-}
-
-void print_some_text(void) {
-  memset(g_v_buf, 0, V_BUF_SZ);
-
-  init_text_buffer();
-
-  int y = -1;
-  print_at(8, ++y, "**      **");  // This label is not centered on the real Agat-7.
-  print_at(11, y, "agat", COLOR_RED);  // The lower-case letters yield Cyrillic (Russian).
-  print_at(0, ++y, "*1234567890123456789012345678901", COLOR_WHITE);  // Can be typed in Monitor.
-  ++y;
-  print_at(0, ++y, "256*256; 32*32: 7*8=>224*256");
-  ++y;
-  // Print the complete font - 96 chars (32 x 3).
-  for (int line = 0; line < 3; ++line) {
-    ++y;
-    for (int x = 0; x < 32; ++x) {
-      const char s[] = {(char) (32 + line * 32 + x), '\0'};
-      print_at(x, y, s);
-    }
-  }
-  ++y;
-  print_at(0, ++y, "/----NORMAL----\\/----BRIGHT----\\");
-  print_at(0, ++y, "0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7");
-  y += 3;  // Reserve the space for color bars.
-  print_at(0, ++y, std::format("SYNC={}, BOARD={}",
-      to_string(kSyncOption), to_string(kBoardOption)).c_str(), COLOR_CYAN);
-  print_at(0, ++y, std::format("VS {}+{}+{}+{}={}, CPU {:.0f} MHZ",
-      video_mode.v_front_porch, video_mode.v_sync_pulse, video_mode.v_back_porch,
-      video_mode.v_visible_area, video_mode.whole_frame,
-      video_mode.sys_freq / 1000.0
-  ).c_str(), COLOR_YELLOW);
-  print_at(0, ++y, std::format("HS {}+{}+{}+{}={}, PX {:.2f} MHZ",
-      video_mode.h_front_porch, video_mode.h_sync_pulse, video_mode.h_back_porch,
-      video_mode.h_visible_area, video_mode.whole_line,
-      video_mode.pixel_freq / 1000000.0
-  ).c_str(), COLOR_WHITE);
-  ++y;
-  print_at(0, ++y, "HTTPS://GITHUB.COM/");
-  print_at(0, ++y, "  MIKE-SHEVCHENKO/RGB_GEN_PICO");
-  ++y;
-  print_at(0, ++y, "-> ZX-RGBI-TO-VGA-HDMI-PICOSDK");
-  print_at(0, ++y, "  BY OLEKSANDR SEMENYUK");
-  ++y;
-  print_at(0, ++y, "-> ZX-RGBI2VGA-HDMI");
-  print_at(0, ++y, "  BY ALEX-EKB");
-  ++y;
-  print_at(0, ++y, "INSPIRED BY HTTP://MURMULATOR.RU");
-
-  print_at(0, 30, "00000000000000000000000000000000", COLOR_WHITE);  // Can be typed in Monitor.
-
-  render_text_buffer();
-}
 
 int main() {
   vreg_set_voltage(VREG_VOLTAGE_1_25);
@@ -815,18 +504,16 @@ int main() {
   sleep_ms(1000);  // Allow the USB UART to initialize for printf().
   printf("Started.\n");
 
-  if (kModeOption == ModeOption::vga) {
+  if (Config::kMode == Config::Mode::vga) {
     video_mode = kVideoModeVga640x480x60;
-  } else if (kModeOption == ModeOption::agat7) {
+  } else if (Config::kMode == Config::Mode::agat7) {
     video_mode = kVideoModeAgat7;
   } else {
-    assert(false && "Unexpected ModeOption");
+    assert(!"Unexpected MODE");
   };
 
-  print_some_text();
-  draw_grid();
-  draw_color_bars();
-
+  Agat7Picture agat7_picture(agat7_renderer);
+  agat7_picture.DrawPicture(kVideoModeAgat7);
   start_vga();
 
   prepare_frame_buffer_lines();

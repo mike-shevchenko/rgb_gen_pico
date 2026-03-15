@@ -40,6 +40,14 @@ function(set_up_pico_target TARGET_NAME)
     target_sources(
         ${TARGET_NAME} PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src/main.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/config.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/video_mode.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/vram.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/vram.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/agat7_picture.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/agat7_picture.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/agat7_renderer.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/agat7_renderer.cpp
     )
 
     pico_generate_pio_header(${TARGET_NAME}
@@ -67,7 +75,6 @@ function(set_up_pico_target TARGET_NAME)
 
     target_compile_options(${TARGET_NAME} PRIVATE
         -O3
-        -Wno-psabi  # Disable a compiler note about std::format().
     )
 
     # Add firmware version definition if provided via CMake
