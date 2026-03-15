@@ -24,6 +24,10 @@
 #include "vram.h"
 
 // TODO:
+// - Fix coding style:
+//   - Use Unix newlines.
+//   - Rename all functions in PascalCase.
+//   - Rename all enum class items with the `k` prefix.
 // - Draw ASCII diagrams for all modes.
 // - Add comments explaining the TV scan principles.
 // - Add a PAL/SECAM Field 1 standard mode: 52 us, 313 lines, 288 visible lines.
