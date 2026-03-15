@@ -75,6 +75,9 @@ function(set_up_pico_target TARGET_NAME)
 
     target_compile_options(${TARGET_NAME} PRIVATE
         -O3
+        -Wall
+        -Werror
+        -Wno-format-truncation  # Some value may not fit in snprintf() buffer.
     )
 
     # Add firmware version definition if provided via CMake

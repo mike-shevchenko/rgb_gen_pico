@@ -484,12 +484,13 @@ void start_vga() {
   dma_channel_set_irq0_enabled(dma_ch1, true);
 
   // Configure the processor to run the DMA handler when DMA IRQ 0 is asserted.
-  if (Config::kMode == Config::Mode::vga) {
-    irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_vga);
-  } else if (Config::kMode == Config::Mode::agat7) {
-    irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_agat7);
-  } else {
-    assert(!"Unexpected MODE");
+  switch (Config::kMode) {
+    case Config::Mode::vga: {
+      irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_vga);
+    } break;
+    case Config::Mode::agat7: {
+      irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_agat7);
+    } break;
   }
   irq_set_enabled(DMA_IRQ_0, /*enabled=*/true);
 
@@ -506,12 +507,13 @@ int main() {
   sleep_ms(1000);  // Allow the USB UART to initialize for printf().
   printf("Started.\n");
 
-  if (Config::kMode == Config::Mode::vga) {
-    video_mode = kVideoModeVga640x480x60;
-  } else if (Config::kMode == Config::Mode::agat7) {
-    video_mode = kVideoModeAgat7;
-  } else {
-    assert(!"Unexpected MODE");
+  switch (Config::kMode) {
+    case Config::Mode::vga: {
+      video_mode = kVideoModeVga640x480x60;
+    } break;
+    case Config::Mode::agat7: {
+      video_mode = kVideoModeAgat7;
+    } break;
   };
 
   Agat7Picture agat7_picture(agat7_renderer);
