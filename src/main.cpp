@@ -631,7 +631,7 @@ void render_char_at_text_pos(int text_x, int text_y, char c, uint8_t color) {
   const int base_pixel_y = V_MARGIN + (text_y * CHAR_HEIGHT);
 
   for (int row = 0; row < 8; row++) {
-    const uint8_t char_line = agat7_font[char_index][row];
+    const uint8_t char_line = agat7_font()[char_index][row];
 
     for (int col = 0; col < 7; col++) {  // 7 pixels wide.
       if (char_line & (1 << (7 - col))) { // Test the bit (MSb first).

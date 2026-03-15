@@ -2,19 +2,23 @@
 
 #include <stdint.h>
 
-// Helper to convert a visual string like "###..###" into 0b11100111.
-constexpr uint8_t b(const char* str) {
-  uint8_t result = 0;
-  for (int i = 0; i < 8 && str[i] != '\0'; ++i) {
-    // Any character that isn't a dot or space is treated as a '1'.
-    if (str[i] != '.' && str[i] != ' ') {
-      result |= (1 << (7 - i));
-    }
-  }
-  return result;
-}
+using Agat7Font = std::array<std::array<uint8_t, 8>, 96>;  // 8 lines, 96 chars.
 
-uint8_t agat7_font[96][8] = {
+// NOTE: A consteval function is required to guarantee that the constant will not occupy memory.
+consteval Agat7Font agat7_font() {
+  // Helper to convert a visual string like "###..###" into 0b11100111.
+  auto b = [](const char* str) consteval -> uint8_t {
+    uint8_t result = 0;
+    for (int i = 0; i < 8 && str[i] != '\0'; ++i) {
+      // Any character that isn't a dot or space is treated as a '1'.
+      if (str[i] != '.' && str[i] != ' ') {
+      result |= (1 << (7 - i));
+      }
+    }
+    return result;
+  };
+
+  return Agat7Font{{
     {  // #32 ' '
       b("........"),
       b("........"),
@@ -975,4 +979,5 @@ uint8_t agat7_font[96][8] = {
       b("..###..."),
       b("........"),
     },
-};
+  }};
+}
