@@ -3,17 +3,17 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "pico.h"
-#include "pico/time.h"
-#include "pico/multicore.h"
-#include "pico/stdio_usb.h"
-#include "pico/stdlib.h"
-#include "hardware/clocks.h"
-#include "hardware/vreg.h"
-#include "hardware/dma.h"
-#include "hardware/irq.h"
-#include "hardware/structs/pll.h"
-#include "hardware/structs/systick.h"
+#include <pico.h>
+#include <pico/time.h>
+#include <pico/multicore.h>
+#include <pico/stdio_usb.h>
+#include <pico/stdlib.h>
+#include <hardware/clocks.h>
+#include <hardware/vreg.h>
+#include <hardware/dma.h>
+#include <hardware/irq.h>
+#include <hardware/structs/pll.h>
+#include <hardware/structs/systick.h>
 
 #include "../build/programs.pio.h"
 
@@ -269,30 +269,32 @@ void __not_in_flash_func(dma_handler_vga)()
   uint16_t* line_buf = (uint16_t*)v_out_dma_buf[active_buf_idx];
 
   // left margin
-  for (int x = h_margin; x--;)
+  for (int x = h_margin; x--;) {
     *line_buf++ = palette[0];
+  }
 
-    int x = 0;
+  int x = 0;
 
-    while ((x + 4) <= h_visible_area)
-    {
-      *line_buf++ = palette[*scr_line++];
-      *line_buf++ = palette[*scr_line++];
-      *line_buf++ = palette[*scr_line++];
-      *line_buf++ = palette[*scr_line++];
+  while ((x + 4) <= h_visible_area)
+  {
+    *line_buf++ = palette[*scr_line++];
+    *line_buf++ = palette[*scr_line++];
+    *line_buf++ = palette[*scr_line++];
+    *line_buf++ = palette[*scr_line++];
 
-      x += 4;
-    }
+    x += 4;
+  }
 
-    while (x < h_visible_area)
-    {
-      *line_buf++ = palette[*scr_line++];
-      x++;
-    }
+  while (x < h_visible_area)
+  {
+    *line_buf++ = palette[*scr_line++];
+    x++;
+  }
 
   // right margin
-  for (int x = h_margin; x--;)
+  for (int x = h_margin; x--;) {
     *line_buf++ = palette[0];
+  }
 
   dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[active_buf_idx], false);
 }
@@ -333,18 +335,18 @@ void __not_in_flash_func(dma_handler_agat7)() {
   }
   if (y >= video_mode.v_visible_area
       && y < (video_mode.v_visible_area + video_mode.v_front_porch)) {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
+    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);  // Start a V-front-porch.
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch)
       && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)) {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[1], false);
+    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[1], false);  // Sstart a V-sync-pulse.
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)
     && y < video_mode.whole_frame) {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
+    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);  // Strat a V-back-porch.
   }
   else if (y < video_mode.v_visible_area) {
-    dma_channel_set_read_addr(dma_ch1, &prepared_line_buffers[y], false);
+    dma_channel_set_read_addr(dma_ch1, &prepared_line_buffers[y], false);  // Start a pixel line.
   }
 }
 
@@ -489,7 +491,7 @@ void start_vga() {
   } else {
     assert(!"Unexpected MODE");
   }
-  irq_set_enabled(DMA_IRQ_0, true);
+  irq_set_enabled(DMA_IRQ_0, /*enabled=*/true);
 
   dma_start_channel_mask((1u << dma_ch0));
 }
@@ -515,8 +517,7 @@ int main() {
   Agat7Picture agat7_picture(agat7_renderer);
   agat7_picture.DrawPicture(kVideoModeAgat7);
   start_vga();
-
   prepare_frame_buffer_lines();
 
-  for(;;);
+  for (;;);
 }
