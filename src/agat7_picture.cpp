@@ -1,9 +1,9 @@
 #include "agat7_picture.h"
 
 #include <stdio.h>
-#include <cassert>
 
 #include "config.h"  // For printing the configuration values on the test image.
+#include "debug.h"
 
 Agat7Picture::Agat7Picture(Agat7Renderer& renderer): r_{&renderer} {
 }
@@ -84,13 +84,13 @@ void Agat7Picture::PrintText(const VideoMode& video_mode) {
   snprintf(params, sizeof(params), "SYNC=%s, BOARD=%s",
       Config::to_string(Config::kSync).c_str(), Config::to_string(Config::kBoard).c_str());
   r_->PrintAt(0, ++y, params, kCyan, kToUpperCase);
-  assert(video_mode.sys_freq < 1'000'000 && "Has to fit in 3 digits");
+  ASSERT_CMP(video_mode.sys_freq, <, 1'000'000, "Has to fit in 3 digits");
   snprintf(params, sizeof(params), "VS %d+%d+%d+%d=%d, CPU %.0f MHZ",
       video_mode.v_front_porch, video_mode.v_sync_pulse, video_mode.v_back_porch,
       video_mode.v_visible_area, video_mode.whole_frame,
       video_mode.sys_freq / 1000.0);
   r_->PrintAt(0, ++y, params, kYellow);
-  assert(video_mode.pixel_freq < 100'000'000 && "Int part Has to fit in 2 digits");
+  ASSERT_CMP(video_mode.pixel_freq, <, 100'000'000, "Int part has to fit in 2 digits");
   snprintf(params, sizeof(params), "HS %d+%d+%d+%d=%d, PX %.2f MHZ",
       video_mode.h_front_porch, video_mode.h_sync_pulse, video_mode.h_back_porch,
       video_mode.h_visible_area, video_mode.whole_line,

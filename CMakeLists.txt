@@ -41,6 +41,10 @@ function(set_up_pico_target TARGET_NAME)
         ${TARGET_NAME} PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src/main.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/config.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/debug.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/debug.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/nx/kit/utils.h
+        ${CMAKE_CURRENT_LIST_DIR}/src/nx/kit/utils.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/video_mode.h
         ${CMAKE_CURRENT_LIST_DIR}/src/vram.h
         ${CMAKE_CURRENT_LIST_DIR}/src/vram.cpp
@@ -84,6 +88,10 @@ function(set_up_pico_target TARGET_NAME)
     if(DEFINED FW_VERSION)
         target_compile_definitions(${TARGET_NAME} PRIVATE FW_VERSION="${FW_VERSION}")
     endif()
+
+    target_compile_definitions(${TARGET_NAME} PRIVATE
+        PICO_PANIC_FUNCTION=CustomPanic
+    )
 
     # Add linker flag to print memory usage
     target_link_options(${TARGET_NAME} PRIVATE

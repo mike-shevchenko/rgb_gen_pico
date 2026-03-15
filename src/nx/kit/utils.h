@@ -1,30 +1,20 @@
 // Copyright 2018-present Network Optix, Inc. Licensed under MPL 2.0: www.mozilla.org/MPL/2.0/
+// Modified by Mike Shevchenko.
 
 #pragma once
 
 /**@file
  * Various utilities. Used by other nx_kit components.
  *
- * This unit can be compiled in the context of any C++ project. If Qt headers are included before
- * this one, some Qt support is enabled via "#if defined(QT_CORE_LIB)".
+ * This unit can be compiled in the context of any C++ project.
+ *
+ * NOTE: It was part of nx_kit library. This file is stipped down for embedded use.
  */
 
-#include <cstddef>
 #include <cstring>
-#include <cstdio>
-#include <cstdlib>
+#include <cstdarg>
 #include <stdint.h>
 #include <string>
-#include <sstream>
-#include <vector>
-#include <map>
-
-#if defined(QT_CORE_LIB)
-    // To be supported in toString().
-    #include <QtCore/QByteArray>
-    #include <QtCore/QString>
-    #include <QtCore/QUrl>
-#endif
 
 #if !defined(NX_KIT_API)
     #define NX_KIT_API /*empty*/
@@ -69,18 +59,16 @@ NX_KIT_API std::string decodeEscapedString(
 template<typename T>
 std::string toString(T value);
 
-/**
- * ATTENTION: std::string is not supported as one of `args`, and will cause undefined behavior.
- */
-template<typename... Args>
-std::string format(const std::string& formatStr, Args... args)
+/** Used by format(). */
+NX_KIT_API std::string vformat(const std::string& fmt, va_list args);
+
+/** ATTENTION: std::string is not supported as one of `args`, and will cause undefined behavior. */
+inline std::string format(const std::string& fmt, ...)
 {
-    const int size = snprintf(nullptr, 0, formatStr.c_str(), args...) + /*space for \0*/ 1;
-    if (size <= 0)
-        return formatStr; //< No better way to handle out-of-memory-like errors.
-    std::string result(size, '\0');
-    snprintf(&result[0], size, formatStr.c_str(), args...);
-    result.resize(size - /*terminating \0*/ 1);
+    va_list args;
+    va_start(args, fmt);
+    const std::string result = vformat(fmt, args);
+    va_end(args);
     return result;
 }
 
@@ -105,131 +93,8 @@ NX_KIT_API bool stringContains(const std::string& s, const std::string& substrin
 
 NX_KIT_API std::string trimString(const std::string& s);
 
-//-------------------------------------------------------------------------------------------------
-// OS support.
-
-constexpr char kPathSeparator =
-    #if defined(_WIN32)
-        '\\';
-    #else
-        '/';
-    #endif
-
-/**
- * @return Last path component: text after the last path separator. On Windows, possible `<drive>:`
- * prefix is excluded and both `/` and `\` are supported. If path is empty, the result is empty.
- */
-NX_KIT_API std::string baseName(std::string path);
-
-/**
- * If the specified path is absolute, just return it, otherwise, convert it to an absolute path
- * using the specified origin dir. On Windows, both `/` and `\` are supported, and paths without
- * a drive letter but started with `/` or `\` are treated as absolute.
- */
-NX_KIT_API std::string absolutePath(
-    const std::string& originDir, const std::string& path);
-
-/**
- * @return Process name, without .exe in Windows.
- */
-NX_KIT_API std::string getProcessName();
-
-/**
- * @return Command line arguments of the process, cached after the first call. If arguments are
- *     not available, then returns a single empty string.
- */
-NX_KIT_API const std::vector<std::string>& getProcessCmdLineArgs();
-
-/**
- * @return Absolute path to the executable file, cached after the first call. If the path cannot be
- *     determined, returns an empty string.
- */
-NX_KIT_API std::string getPathToExecutable();
-
-NX_KIT_API bool fileExists(const char* filename);
-
-//-------------------------------------------------------------------------------------------------
-// Aligned allocation.
-
-/**
- * Aligns value up to alignment boundary.
- * @param alignment If zero, value is returned unchanged.
- */
-inline size_t alignUp(size_t value, size_t alignment)
-{
-    if (alignment == 0)
-        return value;
-    const size_t remainder = value % alignment;
-    if (remainder == 0)
-        return value;
-    return value + alignment - remainder;
-}
-
-/** Shifts the pointer up to deliberately misalign it to an odd address - intended for tests. */
-inline uint8_t* misalignedPtr(void* data)
-{
-    return (uint8_t*) (17 + alignUp((uintptr_t) data, 32));
-}
-
-/**
- * Allocates size bytes of data, aligned to alignment boundary.
- *
- * NOTE: Allocated memory must be freed with a call to freeAligned().
- * NOTE: This function is as safe as malloc().
- *
- * @param mallocFunc Function with the signature void*(size_t), which is called to allocate memory.
- */
-template<class MallocFunc>
-void* mallocAligned(size_t size, size_t alignment, MallocFunc mallocFunc)
-{
-    if (alignment == 0)
-        return nullptr;
-    const auto ptr = (char*) mallocFunc(size + alignment + sizeof(alignment));
-    if (!ptr) //< allocation error
-        return ptr;
-
-    char* const alignedPtr = ptr + sizeof(alignment); //< Leaving place to save misalignment.
-    const size_t misalignment = alignment - (uintptr_t) alignedPtr % alignment;
-    memcpy(ptr + misalignment, &misalignment, sizeof(misalignment)); //< Save misalignment.
-    return alignedPtr + misalignment;
-}
-
-/** Calls mallocAligned() passing standard malloc() as mallocFunc. */
-inline void* mallocAligned(size_t size, size_t alignment)
-{
-    // NOTE: Lambda is used to suppress a warning that some ::malloc() implementations are using
-    // deprecated exception specification.
-    return mallocAligned<>(size, alignment, [](size_t size) { return ::malloc(size); });
-}
-
-/**
- * Free ptr allocated with a call to mallocAligned().
- *
- * NOTE: This function is as safe as ::free().
- *
- * @param freeFunc Function with the signature void(void*), which is called to free the memory.
- */
-template<class FreeFunc>
-void freeAligned(void* ptr, FreeFunc freeFunc)
-{
-    if (!ptr)
-        return freeFunc(ptr);
-
-    ptr = (char*) ptr - sizeof(size_t);
-    size_t misalignment = 0;
-    memcpy(&misalignment, ptr, sizeof(misalignment)); //< Retrieve saved misalignment.
-    ptr = (char*) ptr - misalignment;
-
-    freeFunc(ptr);
-}
-
-/** Calls freeAligned() passing standard free() as freeFunc. */
-inline void freeAligned(void* ptr)
-{
-    // NOTE: Lambda is used to suppress a warning that some ::free() implementations are using
-    // deprecated exception specification.
-    return freeAligned<>(ptr, [](void* ptr) { return ::free(ptr); });
-}
+/** Converts ASCII characters from the input string to the upper case. */
+NX_KIT_API std::string toUpper(const std::string& str);
 
 //-------------------------------------------------------------------------------------------------
 // Implementation.
@@ -252,63 +117,23 @@ inline std::string toString(wchar_t* w) { return toString(const_cast<const wchar
 NX_KIT_API std::string toString(const std::string& s);
 NX_KIT_API std::string toString(const std::wstring& w);
 
-
-/** For unknown types, use their operator<<(). */
+/**
+ * For unknown types, use std::to_string().
+ *
+ * NOTE: In the original nx_kit, it was implemented via ostringstream, but for embedded use such
+ * approach takes a lot more code memory (~600 KB), so changed to std::to_string().
+ */
 template<typename T>
 std::string toString(T value)
 {
-    std::ostringstream outputString;
-    outputString << value;
-    return outputString.str();
+    return std::to_string(value);
 }
-
-#if defined(QT_CORE_LIB)
-
-static inline std::string toString(QByteArray b) //< By value to avoid calling the template impl.
-{
-    return toString(b.toStdString());
-}
-
-static inline std::string toString(QString s) //< By value to avoid calling the template impl.
-{
-    return toString(s.toUtf8().constData());
-}
-
-static inline std::string toString(QUrl u) //< By value to avoid calling the template impl.
-{
-    return toString(u.toEncoded().toStdString());
-}
-
-#endif // defined(QT_CORE_LIB)
 
 template<typename P>
 std::string toString(P* ptr)
 {
     return toString((const void*) ptr);
 }
-
-//-------------------------------------------------------------------------------------------------
-// Configuration file parsing.
-
-NX_KIT_API bool parseNameValueFile(
-    const std::string& nameValueFilePath,
-    std::map<std::string, std::string>* nameValueMap,
-    const std::string& errorPrefix,
-    std::ostream* out,
-    bool* isFileEmpty);
-
-//-------------------------------------------------------------------------------------------------
-// String conversions.
-
-/** Converts ASCII characters from the input string to the upper case. */
-NX_KIT_API std::string toUpper(const std::string& str);
-
-#if defined(_WIN32)
-
-/** Converts a UTF-16 string via WinAPI to a UTF-8 std::string. */
-NX_KIT_API std::string wideCharToStdString(const wchar_t* str);
-
-#endif // defined(_WIN32)
 
 } // namespace utils
 } // namespace kit

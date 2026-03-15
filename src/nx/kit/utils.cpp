@@ -1,203 +1,13 @@
 // Copyright 2018-present Network Optix, Inc. Licensed under MPL 2.0: www.mozilla.org/MPL/2.0/
+// Modified by Mike Shevchenko.
 
 #include "utils.h"
 
-#include <algorithm>
 #include <climits>
-#include <cerrno>
-#include <fstream>
-#include <sstream>
-#include <string>
-#include <type_traits>
-#include <vector>
-#include <map>
-#include <mutex>
-
-#include <nx/kit/debug.h>
-
-#if defined(_WIN32)
-    #define NOMINMAX //< Needed to prevent windows.h define macros min() and max().
-    #include <windows.h>
-    #include <Windows.h>
-    #include <shellapi.h>
-#elif defined(__APPLE__)
-    #include <nx/kit/apple_utils.h>
-#else
-    #include <fstream>
-    #include <unistd.h>
-#endif
 
 namespace nx {
 namespace kit {
 namespace utils {
-
-std::string baseName(std::string path)
-{
-    #if defined(_WIN32)
-        const std::string pathWithoutDrive = (path.size() >= 2
-             && ((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
-             && path[1] == ':')
-                 ? path.substr(2)
-                 : path;
-
-        const size_t slashPos = pathWithoutDrive.rfind('/');
-        const size_t backslashPos = pathWithoutDrive.rfind('\\');
-
-        if (slashPos == std::string::npos && backslashPos == std::string::npos)
-            return pathWithoutDrive;
-
-        const size_t lastPathSeparator = (slashPos == std::string::npos)
-            ? backslashPos
-            : (backslashPos == std::string::npos)
-                ? slashPos
-                : std::max(slashPos, backslashPos);
-
-        return pathWithoutDrive.substr(lastPathSeparator + 1);
-    #else
-        const size_t slashPos = path.rfind('/');
-        return (slashPos == std::string::npos) ? path : path.substr(slashPos + 1);
-    #endif
-}
-
-std::string absolutePath(
-    const std::string& originDir, const std::string& path)
-{
-    if (originDir.empty())
-        return path;
-    if (path.empty())
-        return originDir;
-
-    if (path[0] == '/')
-        return path;
-
-    #if defined(_WIN32)
-        if (path[0] == '\\')
-            return path;
-        if (path.size() >= 2
-            && ((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
-            && path[1] == ':')
-        {
-            return path;
-        }
-    #endif
-
-    char separator = '/';
-
-    if (originDir[originDir.size() - 1] == '/')
-        separator = '\0'; //< The separator is not needed.
-
-    #if defined(_WIN32)
-        if (originDir[originDir.size() - 1] == '\\')
-            separator = '\0'; //< The separator is not needed.
-        if (separator)
-        {
-            if (path.find('\\') != std::string::npos)
-                separator = '\\'; //< Change to backslash if backslashes exist in path.
-            else if (path.find('/') == std::string::npos
-                && originDir.find('\\') != std::string::npos)
-            {
-                // Neither slash nor backslash exists in path, but backslash exists in the origin.
-                separator = '\\';
-            }
-        }
-    #endif
-
-    if (separator)
-        return originDir + separator + path;
-
-    return originDir + path;
-}
-
-std::string getProcessName()
-{
-    std::string processName =
-        nx::kit::utils::baseName(nx::kit::utils::getProcessCmdLineArgs()[0]);
-
-    #if defined(_WIN32)
-        const std::string exeExt = ".exe";
-        if (processName.size() > exeExt.size()
-            && processName.substr(processName.size() - exeExt.size()) == exeExt)
-        {
-            processName = processName.substr(0, processName.size() - exeExt.size());
-        }
-    #endif
-
-    return processName;
-}
-
-static std::vector<std::string> obtainProcessCmdLineArgs()
-{
-    std::vector<std::string> args;
-
-    #if defined(_WIN32)
-	{
-        int argc;
-        LPWSTR* const argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-        if (argv)
-        {
-            for (int i = 0; i < argc; ++i)
-                args.push_back(wideCharToStdString(argv[i]));
-        }
-        LocalFree(argv);
-	}
-    #elif defined(__APPLE__)
-	{
-        args = nx::kit::apple_utils::getProcessCmdLineArgs();
-    }
-	#else //< Assuming Linux-like OS.
-	{
-        std::ifstream inputStream("/proc/self/cmdline");
-        std::string arg;
-        while (std::getline(inputStream, arg, '\0'))
-            args.push_back(arg);
-	}
-    #endif
-
-    // Ensure at least one element in the return value since we rely on the fact that this
-    // function returns non-empty vector.
-    if (args.empty())
-        args.push_back("");
-
-    return args;
-}
-
-const std::vector<std::string>& getProcessCmdLineArgs()
-{
-    static const std::vector<std::string> args = obtainProcessCmdLineArgs();
-    return args;
-}
-
-std::string getPathToExecutable()
-{
-    static std::string pathToExecutable;
-
-    static std::mutex mutex;
-    const std::lock_guard<std::mutex> lock(mutex);
-
-    if (!pathToExecutable.empty())
-        return pathToExecutable;
-
-    #if defined(_WIN32)
-        WCHAR filenameBuffer[MAX_PATH + /* terminating NUL */ 1] = {0};
-        if (GetModuleFileNameW(nullptr, filenameBuffer, MAX_PATH) == 0)
-            return pathToExecutable;
-        pathToExecutable = wideCharToStdString(filenameBuffer);
-    #elif defined(__APPLE__)
-        pathToExecutable = nx::kit::apple_utils::getPathToExecutable();
-    #else
-        char path[PATH_MAX + /* terminating NUL */ 1] = {0};
-        const ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
-        if (count != -1)
-            pathToExecutable = path;
-    #endif
-
-    return pathToExecutable;
-}
-
-bool fileExists(const char* filename)
-{
-    return static_cast<bool>(std::ifstream(filename));
-}
 
 /**
  * Appends an error message to std::string* errorMessage, concatenating via a space if
@@ -516,9 +326,20 @@ std::string toString(const wchar_t* w)
     return toStringFromPtr(w);
 }
 
-bool fromString(const std::string& s, int* value)
+std::string vformat(const std::string& fmt, va_list args)
 {
-    if (!value || s.empty())
+    const int char_count = vsnprintf(nullptr, 0, fmt.c_str(), args);
+    if (char_count < 0)
+        return "ERROR_FORMATTING(" + toString(fmt) + ")";
+    std::string result;
+    result.resize(char_count);
+    vsnprintf(&result[0], char_count + /* terminating '\0'*/1, fmt.c_str(), args);
+    return result;
+}
+
+bool fromString(const std::string& s, int* outValue)
+{
+    if (!outValue || s.empty())
         return false;
 
     // NOTE: std::stoi() is missing on Android, thus, using std::strtol().
@@ -529,13 +350,13 @@ bool fromString(const std::string& s, int* value)
     if (v > INT_MAX || v < INT_MIN || errno != 0 || *pEnd != '\0')
         return false;
 
-    *value = (int) v;
+    *outValue = (int) v;
     return true;
 }
 
-bool fromString(const std::string& s, uint32_t* value)
+bool fromString(const std::string& s, uint32_t* outValue)
 {
-    if (!value || s.empty())
+    if (!outValue || s.empty())
         return false;
 
     char* pEnd = nullptr;
@@ -546,57 +367,61 @@ bool fromString(const std::string& s, uint32_t* value)
     if (v > UINT32_MAX || v < 0 || errno != 0 || *pEnd != '\0')
         return false;
 
-    *value = (uint32_t) v;
+    *outValue = (uint32_t) v;
     return true;
 }
 
-bool fromString(const std::string& s, uint64_t* value)
+bool fromString(const std::string& s, uint64_t* outValue)
 {
-    if (!value || s.empty())
+    if (!outValue || s.empty())
         return false;
 
     char* pEnd = nullptr;
-    
+
     // Check for a negative value - strtoull() silently allows negative values.
     if (strtol(s.c_str(), &pEnd, /*base*/ 0) < 0)
         return false;
-    
+
     errno = 0; //< Required before std::strtoull().
     const unsigned long long v = std::strtoull(s.c_str(), &pEnd, /*base*/ 0);
 
     if (errno != 0 || *pEnd != '\0')
         return false;
 
-    *value = (uint64_t) v;
+    *outValue = (uint64_t) v;
     return true;
-}
-
-template<typename Value>
-bool fromStringViaStringStream(const std::string& s, Value* outValue)
-{
-    if (!outValue || s.empty())
-        return false;
-
-    Value result{};
-    std::istringstream stream(s);
-    stream.imbue(std::locale("C"));
-    stream >> result;
-
-    const bool success = stream.eof() && !stream.bad();
-    if (success)
-        *outValue = result;
-
-    return success;
 }
 
 bool fromString(const std::string& s, double* outValue)
 {
-    return fromStringViaStringStream(s, outValue);
+    if (!outValue || s.empty())
+        return false;
+
+    char* pEnd = nullptr;
+    errno = 0; //< Required before std::strtod().
+    const double v = std::strtod(s.c_str(), &pEnd);
+
+    if (errno != 0 || *pEnd != '\0')
+        return false;
+
+    *outValue = v;
+    return true;
 }
 
 bool fromString(const std::string& s, float* outValue)
 {
-    return fromStringViaStringStream(s, outValue);
+    if (!outValue || s.empty())
+        return false;
+
+    char* pEnd = nullptr;
+    errno = 0; //< Required before std::strtod().
+    const float v = std::strtof(s.c_str(), &pEnd);
+
+    if (errno != 0 || *pEnd != '\0')
+        return false;
+
+    *outValue = v;
+    return true;
 }
 
 bool fromString(const std::string& s, bool* value)
@@ -612,8 +437,11 @@ bool fromString(const std::string& s, bool* value)
 
 void stringReplaceAllChars(std::string* s, char sample, char replacement)
 {
-    std::transform(s->cbegin(), s->cend(), s->begin(),
-        [=](char c) { return c == sample ? replacement : c; });
+    for (int i = 0; i < (int) s->size(); ++i)
+    {
+        if ((*s)[i] == sample)
+            (*s)[i] = replacement;
+    }
 }
 
 void stringInsertAfterEach(std::string* s, char sample, const char* const insertion)
@@ -664,108 +492,6 @@ std::string trimString(const std::string& s)
     return s.substr(start, end - start + 1);
 }
 
-//-------------------------------------------------------------------------------------------------
-// Parsing utils.
-
-namespace {
-
-static void skipWhitespace(const char** const pp)
-{
-    while (**pp != '\0' && isSpaceOrControlChar(**pp))
-        ++(*pp);
-}
-
-struct ParsedNameValue
-{
-    std::string name; //< Empty if the line must be ignored.
-    std::string value;
-    std::string error; //< Empty on success.
-};
-
-static ParsedNameValue parseNameValue(const std::string& lineStr)
-{
-    ParsedNameValue result;
-
-    const char* p = lineStr.c_str();
-
-    skipWhitespace(&p);
-    if (*p == '\0' || *p == '#') //< Empty or comment line.
-        return result;
-    while (*p != '\0' && *p != '=' && !isSpaceOrControlChar(*p))
-        result.name += *(p++);
-    if (result.name.empty())
-    {
-        result.error = "The name part (before \"=\") is empty.";
-        return result;
-    }
-    skipWhitespace(&p);
-
-    if (*(p++) != '=')
-    {
-        result.error = "Missing \"=\" after the name " + toString(result.name) + ".";
-        return result;
-    }
-    skipWhitespace(&p);
-
-    while (*p != '\0')
-        result.value += *(p++);
-
-    // Trim trailing whitespace in the value.
-    int i = (int) result.value.size() - 1;
-    while (i >= 0 && isSpaceOrControlChar(result.value[i]))
-        --i;
-    result.value = result.value.substr(0, i + 1);
-
-    return result;
-}
-
-} // namespace
-
-bool parseNameValueFile(
-    const std::string& nameValueFilePath,
-    std::map<std::string, std::string>* nameValueMap,
-    const std::string& errorPrefix,
-    std::ostream* output,
-    bool* isFileEmpty)
-{
-    nameValueMap->clear();
-
-    std::ifstream file(nameValueFilePath);
-    if (!file.good())
-        return false;
-
-    bool result = true;
-
-    std::string lineStr;
-    int line = 0;
-    while (std::getline(file, lineStr))
-    {
-        ++line;
-
-        static constexpr char kBom[] = "\xEF\xBB\xBF";
-        if (line == 1 && stringStartsWith(lineStr, kBom))
-            lineStr.erase(0, sizeof(kBom) - /* Terminating NUL */ 1);
-
-        const ParsedNameValue parsed = parseNameValue(lineStr);
-        if (!parsed.error.empty())
-        {
-            if (output)
-            {
-                *output << errorPrefix << "ERROR: " << parsed.error << " Line " << line
-                    << ", file " << nameValueFilePath << std::endl;
-            }
-            result = false;
-            continue;
-        }
-
-        if (!parsed.name.empty())
-            (*nameValueMap)[parsed.name] = parsed.value;
-    }
-
-    if (isFileEmpty != nullptr)
-        *isFileEmpty = line == 0;
-    return result;
-}
 
 std::string toUpper(const std::string& str)
 {
