@@ -60,11 +60,13 @@ void Agat7Picture::PrintText(const VideoMode& video_mode) {
   using enum Agat7Renderer::PrintMode;
   using enum Vram::Color;
 
+  // NOTE: The top AGAT label and the lines marked as "Can be typed in Monitor" allow to physically
+  // match this test picture with the image from the original machine.
+
   int y = -1;
-  r_->PrintAt(8, ++y, "**      **");  // This label is not centered on the real Agat-7.
+  r_->PrintAt(8, ++y, "**      **");  // This label is also not centered on the real Agat-7.
   r_->PrintAt(11, y, "agat", kRed, kAllowRussian);
-  // Can be typed in Monitor.
-  r_->PrintAt(0, ++y, "*1234567890123456789012345678901", kWhite);
+  r_->PrintAt(0, ++y, "*1234567890123456789012345678901", kWhite); // Can be typed in Monitor.
   ++y;
   r_->PrintAt(0, ++y, "256*256; 32*32: 7*8=>224*256");
   ++y;
@@ -79,7 +81,10 @@ void Agat7Picture::PrintText(const VideoMode& video_mode) {
   ++y;
   r_->PrintAt(0, ++y, "/----NORMAL----\\/----BRIGHT----\\");
   r_->PrintAt(0, ++y, "0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7");
-  y += 3;  // Reserve the space for color bars.
+  y += 2;  // Reserve the space for the color bars.
+  r_->PrintAt(0, ++y, "K R G Y B M C W K R G Y B M C W");  // Color names.
+  ++y;
+
   char params[r_->kTextWidth + 1];
   snprintf(params, sizeof(params), "SYNC=%s, BOARD=%s",
       Config::to_string(Config::kSync).c_str(), Config::to_string(Config::kBoard).c_str());
@@ -96,6 +101,7 @@ void Agat7Picture::PrintText(const VideoMode& video_mode) {
       video_mode.h_visible_area, video_mode.whole_line,
       video_mode.pixel_freq / 1'000'000.0);
   r_->PrintAt(0, ++y, params, kWhite);
+
   ++y;
   r_->PrintAt(0, ++y, "HTTPS://GITHUB.COM/");
   r_->PrintAt(0, ++y, "  MIKE-SHEVCHENKO/RGB_GEN_PICO");
