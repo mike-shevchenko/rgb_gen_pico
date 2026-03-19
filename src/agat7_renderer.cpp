@@ -106,3 +106,6 @@ void Agat7Renderer::DrawVertLineMgr(int x_half, int y_half, int len_half, Vram::
   }
 }
 
+void Agat7Renderer::PlotHgr(int x, int y, Vram::Color color) {
+  vram_->SetPixel(x, y, color);
+}

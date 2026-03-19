@@ -5,15 +5,17 @@
 #include "config.h"  // For printing the configuration values on the test image.
 #include "debug.h"
 
+using enum Vram::Color;
+
 Agat7Picture::Agat7Picture(Agat7Renderer& renderer): r_{&renderer} {
 }
 
 namespace {
 
 constexpr Vram::Color kRgbLineColors[]{
-    Vram::kRed,
-    Vram::kGreen,
-    Vram::kBlue,
+    kRed,
+    kGreen,
+    kBlue,
 };
 
 Vram::Color RgbLineColor(int index) {
@@ -22,30 +24,31 @@ Vram::Color RgbLineColor(int index) {
 
 }  // namespace
 
-void Agat7Picture::DrawHorzRgbLine(int y_half, MiddleStrokes draw_middle_strokes) {
+void Agat7Picture::DrawGrid() {
+  // Draw a 2-pixel-wide frame around the screen, except over the `** AGAT **` text.
   constexpr int stroke_width_half = 8;
   for (int stroke = 0; stroke < 16; ++stroke) {
-    if (stroke < 4 || stroke > 9 || draw_middle_strokes == MiddleStrokes::kPresent) {
+    if (stroke < 4 || stroke > 9) {  // Make room around `** AGAT **` at the top.
       r_->DrawHorzLineMgr(
-          stroke_width_half * stroke, y_half, stroke_width_half, RgbLineColor(stroke));
+          stroke_width_half * stroke, 0, stroke_width_half, RgbLineColor(stroke));
     }
+    r_->DrawHorzLineMgr(
+        stroke_width_half * stroke, 127, stroke_width_half, RgbLineColor(stroke));
   }
-}
-
-void Agat7Picture::DrawVertRgbLine(int half_x) {
   constexpr int stroke_height_half = 8;
   for (int stroke = 0; stroke < 16; ++stroke) {
+    if (stroke == 1) {  // Make room for the horizontal pixel ruler.
+      continue;
+    }
     r_->DrawVertLineMgr(
-        half_x, stroke * stroke_height_half, stroke_height_half, RgbLineColor(stroke));
+        0, stroke * stroke_height_half, stroke_height_half, RgbLineColor(stroke));
+    r_->DrawVertLineMgr(
+        127, stroke * stroke_height_half, stroke_height_half, RgbLineColor(stroke));
   }
-}
 
-void Agat7Picture::DrawGrid() {
-  // Draw a 2-pixel-wide frame around the screen, except over the "** AGAT **" text.
-  DrawHorzRgbLine(0, MiddleStrokes::kAbsent);
-  DrawHorzRgbLine(127);
-  DrawVertRgbLine(0);
-  DrawVertRgbLine(127);
+  for (int x = 0; x < 256; x += 2) {  // Draw a horizontal pixel ruler to see the pixel clock.
+    r_->PlotHgr(x, 16, kWhite);
+  }
 }
 
 void Agat7Picture::DrawColorBars() {
@@ -58,7 +61,6 @@ void Agat7Picture::DrawColorBars() {
 
 void Agat7Picture::PrintText(const VideoMode& video_mode) {
   using enum Agat7Renderer::PrintMode;
-  using enum Vram::Color;
 
   // NOTE: The top AGAT label and the lines marked as "Can be typed in Monitor" allow to physically
   // match this test picture with the image from the original machine.

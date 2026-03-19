@@ -68,6 +68,9 @@ class Agat7Renderer {
   // Draw a vertical line 2 pixels thick; coords are specified in two-pixel units - MGR mode.
   void DrawVertLineMgr(int x_half, int y_half, int len_half, Vram::Color color);
 
+  // Set a single pixel of the HGR (256x256) mode.
+  void PlotHgr(int x, int y, Vram::Color color);
+
  private:
   static constexpr int kTextAreaWidthPx = kTextWidth * kCharWidth;
   static_assert(kTextAreaWidthPx == 224);
