@@ -269,7 +269,7 @@ void __not_in_flash_func(dma_handler_vga)()
   // Represents the line in the original captured image.
   uint16_t scaled_y = (y - v_margin) / video_mode.div;
 
-  uint8_t* scr_line = &scr_buffer[scaled_y * (V_BUF_W / 2)];
+  uint8_t* scr_line = vram.LineBytes(scaled_y).data();
   uint16_t* line_buf = (uint16_t*)v_out_dma_buf[active_buf_idx];
 
   // left margin
