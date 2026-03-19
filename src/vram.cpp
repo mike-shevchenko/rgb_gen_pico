@@ -15,7 +15,7 @@ void Vram::Clear(Vram::Color color) {
   memset(buffer_, (color << 16) | color, sizeof(buffer_));
 }
 
-std::span<uint8_t> Vram::Line(int y) {
+std::span<uint8_t> Vram::LineBytes(int y) {
   if (!ASSERT_CMP(y, >=, 0) || !ASSERT_CMP(y, <, height_)) {
     return std::span(buffer_[0], width_px_ / 2);
   }

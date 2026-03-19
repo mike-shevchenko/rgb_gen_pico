@@ -35,8 +35,13 @@ class Vram {
   };
 
   Vram(int width_px, int height);
+
+  int line_size_bytes() const { return width_px_ / 2; };
+  int width_px() const { return width_px_; };
+  int height() const { return height_; }
+
   void Clear(Color color = kBlack);
-  std::span<uint8_t> Line(int y);
+  std::span<uint8_t> LineBytes(int y);
   void SetPixel(int x, int y, Color color);
 
  private:

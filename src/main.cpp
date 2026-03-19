@@ -165,7 +165,7 @@ void __not_in_flash_func(dma_handler_vga)()
   if (y == video_mode.whole_frame)
   {
     y = 0;
-    scr_buffer = vram.Line(0).data();
+    scr_buffer = vram.LineBytes(0).data();
   }
 
   if (y >= video_mode.v_visible_area && y < (video_mode.v_visible_area + video_mode.v_front_porch))
@@ -320,11 +320,10 @@ void prepare_frame_buffer_lines() {
     memset(line_bytes + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity), h_sync_pulse);
 
     // Convert the frame buffer line through the palette.
-    const uint8_t* const scr_line = vram.Line(y).data();
+    const std::span<uint8_t> vram_line = vram.LineBytes(y);
     uint16_t* const line_buf = (uint16_t*)prepared_line_buffers[y];
-
-    for (int x = 0; x < V_BUF_W / 2; x++) {
-      line_buf[x] = palette[scr_line[x]];
+    for (size_t x = 0; x < vram_line.size(); ++x) {
+      line_buf[x] = palette[vram_line[x]];
     }
   }
 }

@@ -86,8 +86,8 @@ void Agat7Renderer::DrawHorzLineMgr(int x_half, int y_half, int len_half, Vram::
   }
   const uint8_t byte = (color << 4) | color;
   for (int byte_idx = x_half; byte_idx < x_half + len_half; ++byte_idx) {
-    vram_->Line(y_half * 2)[byte_idx] = byte;  // Fill two consecutive pixels.
-    vram_->Line(y_half * 2 + 1)[byte_idx] = byte;  // Fill two consecutive pixels.
+    vram_->LineBytes(y_half * 2)[byte_idx] = byte;  // Fill two consecutive pixels.
+    vram_->LineBytes(y_half * 2 + 1)[byte_idx] = byte;  // Fill two consecutive pixels.
   }
 }
 
@@ -102,7 +102,7 @@ void Agat7Renderer::DrawVertLineMgr(int x_half, int y_half, int len_half, Vram::
   }
   const uint8_t byte = (color << 4) | color;
   for (int y = y_half * 2; y < (y_half + len_half) * 2; ++y) {
-    vram_->Line(y)[x_half] = byte;  // Fill two consecutive pixels.
+    vram_->LineBytes(y)[x_half] = byte;  // Fill two consecutive pixels.
   }
 }
 
