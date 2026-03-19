@@ -78,7 +78,7 @@ constexpr VideoMode kVideoModeVga640x480x60{
 //     layouts must be changed to allow adjusting this value, because currently the code can
 //     start the vsync pulse no earlier than the first visible pixel of a line.
 constexpr VideoMode kVideoModeAgat7{
-    .sys_freq = 126000,
+    .sys_freq = 252000,
     .pixel_freq = 5250000.0,
     .h_visible_area = 256,
     .v_visible_area = 256,
