@@ -39,11 +39,6 @@
 
 //-------------------------------------------------------------------------------------------------
 
-constexpr uint8_t kVgaGpioStart =
-  (Config::kBoard == Config::Board::rgb2vga) ? 8 :
-  (Config::kBoard == Config::Board::murmulator) ? 6 :
-  printf/*compile-time error*/("Unexpected BOARD\n");
-
 // Sync pulse patterns (positive polarity).
 constexpr uint8_t kNoSync = 0b00000000;
 constexpr uint8_t kVSync = 0b10000000;
@@ -119,18 +114,6 @@ static_assert(
 #define DREQ_PIO_VGA DREQ_PIO0_TX0
 #define SM_VGA 0
 
-#define FREQUENCY 7000000
-
-// Video timings.
-// 64 us - duration of a single scanline, 12 us - combined duration of the front porch, horizontal
-// sync pulse, and back porch.
-#define ACTIVE_VIDEO_TIME (64 - 12)
-
-// Video buffer size.
-#define V_BUF_W 256  // For the VGA version: (ACTIVE_VIDEO_TIME * (FREQUENCY / 1000000))
-#define V_BUF_H 256  // For the VGA version: 304
-#define V_BUF_SZ (V_BUF_H * V_BUF_W / 2)  // 2 pixels per byte
-
 static Vram vram(/*width_px=*/256, /*height=*/256);
 static Agat7Renderer agat7_renderer(vram);
 
@@ -142,19 +125,26 @@ static int dma_ch1;
 static uint offset;
 
 static VideoMode video_mode;
+
+// Position of Vram on the VGA video output, in VGA pixels.
 static int16_t h_visible_area;
 static int16_t h_margin;
 static int16_t v_visible_area;
 static int16_t v_margin;
 
-static uint32_t* v_out_dma_buf[4];
-static uint16_t palette[256];
+// 4 buffers, each represents a full video-out line (with porches), including invisible lines.
+constexpr int kDmaBufBlank = 0;
+constexpr int kDmaBufVsync = 1;
+constexpr int kDmaBufImageA = 2;
+constexpr int kDmaBufImageB = 3;
+static uint32_t* dma_buf[4];
 
-void __not_in_flash_func(memset32)(uint32_t* dst, const uint32_t data, uint32_t size);
+static uint16_t palette[256];
+uint32_t* prepared_line_buffers[256];  // One buffer per line.
 
 void __not_in_flash_func(dma_handler_vga)()
 {
-  static uint16_t y = 0;
+  static uint16_t y = 0; // VGA monitor line: 0..video_mode.whole_frame.
 
   static uint8_t* scr_buffer = nullptr;
 
@@ -171,27 +161,27 @@ void __not_in_flash_func(dma_handler_vga)()
   if (y >= video_mode.v_visible_area && y < (video_mode.v_visible_area + video_mode.v_front_porch))
   {
     // vertical sync front porch
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
     return;
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch)
       && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse))
   {
     // vertical sync pulse
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[1], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufVsync], false);
     return;
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)
       && y < video_mode.whole_frame)
   {
     // vertical sync back porch
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
     return;
   }
 
   if (!(scr_buffer))
   {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[2], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufImageA], false);
     return;
   }
 
@@ -199,7 +189,7 @@ void __not_in_flash_func(dma_handler_vga)()
   // resolution of the screen.
   if (y < v_margin || y >= (v_visible_area + v_margin))
   {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
     return;
   }
 
@@ -239,27 +229,27 @@ void __not_in_flash_func(dma_handler_vga)()
   switch (line)
   {
   case 0:
-    active_buf_idx = 2;
+    active_buf_idx = kDmaBufImageA;
     break;
 
   case 1:
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[2], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufImageA], false);
     return;
 
   case 2:
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
     return;
 
   case 3:
-    active_buf_idx = 3;
+    active_buf_idx = kDmaBufImageB;
     break;
 
   case 4:
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[3], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufImageB], false);
     return;
 
   case 5:
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
     return;
 
   default:
@@ -267,43 +257,42 @@ void __not_in_flash_func(dma_handler_vga)()
   }
 
   // Represents the line in the original captured image.
-  uint16_t scaled_y = (y - v_margin) / video_mode.div;
+  ASSERT_CMP(y, >=, v_margin);
+  const uint16_t scaled_y = (y - v_margin) / video_mode.div;
 
-  uint8_t* scr_line = vram.LineBytes(scaled_y).data();
-  uint16_t* line_buf = (uint16_t*)v_out_dma_buf[active_buf_idx];
+  const uint8_t* vram_byte_ptr = vram.LineBytes(scaled_y).data();
+  uint16_t* dma_buf_word_ptr = (uint16_t*)dma_buf[active_buf_idx];
 
   // left margin
   for (int x = h_margin; x--;) {
-    *line_buf++ = palette[0];
+    *dma_buf_word_ptr++ = palette[0];
   }
 
   int x = 0;
 
   while ((x + 4) <= h_visible_area)
   {
-    *line_buf++ = palette[*scr_line++];
-    *line_buf++ = palette[*scr_line++];
-    *line_buf++ = palette[*scr_line++];
-    *line_buf++ = palette[*scr_line++];
+    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
+    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
+    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
+    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
 
     x += 4;
   }
 
   while (x < h_visible_area)
   {
-    *line_buf++ = palette[*scr_line++];
+    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
     x++;
   }
 
   // right margin
   for (int x = h_margin; x--;) {
-    *line_buf++ = palette[0];
+    *dma_buf_word_ptr++ = palette[0];
   }
 
-  dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[active_buf_idx], false);
+  dma_channel_set_read_addr(dma_ch1, &dma_buf[active_buf_idx], false);
 }
-
-uint32_t* prepared_line_buffers[256];  // One buffer per line.
 
 void prepare_frame_buffer_lines() {
   int whole_line = video_mode.whole_line / video_mode.div;
@@ -338,15 +327,15 @@ void __not_in_flash_func(dma_handler_agat7)() {
   }
   if (y >= video_mode.v_visible_area
       && y < (video_mode.v_visible_area + video_mode.v_front_porch)) {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);  // Start a V-front-porch.
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);  // Start a V-front-porch.
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch)
       && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)) {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[1], false);  // Sstart a V-sync-pulse.
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufVsync], false);  // Sstart a V-sync-pulse.
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)
     && y < video_mode.whole_frame) {
-    dma_channel_set_read_addr(dma_ch1, &v_out_dma_buf[0], false);  // Strat a V-back-porch.
+    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);  // Strat a V-back-porch.
   }
   else if (y < video_mode.v_visible_area) {
     dma_channel_set_read_addr(dma_ch1, &prepared_line_buffers[y], false);  // Start a pixel line.
@@ -354,23 +343,27 @@ void __not_in_flash_func(dma_handler_agat7)() {
 }
 
 void start_vga() {
-  int whole_line = video_mode.whole_line / video_mode.div;
-  int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
-  int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
+  constexpr uint8_t kVgaGpioStart =
+    (Config::kBoard == Config::Board::rgb2vga) ? 8 :
+    (Config::kBoard == Config::Board::murmulator) ? 6 :
+    printf/*compile-time error*/("Unexpected BOARD\n");
 
-  h_visible_area = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 2;
-  h_margin = (h_visible_area - (uint8_t)(FREQUENCY / 1000000) * (ACTIVE_VIDEO_TIME / 2)) / 2;
+  const int whole_line = video_mode.whole_line / video_mode.div;
+  const int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
+  const int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
 
+  const uint16_t h_width = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 2;
+  constexpr int zx_spectrum_pixel_clock_mhz = 7'000'000;
+  constexpr int pal_visible_line_duration_us = 52;
+  h_margin = (h_width - (uint8_t)zx_spectrum_pixel_clock_mhz * (pal_visible_line_duration_us / 2)) / 2;
   if (h_margin < 0) {
     h_margin = 0;
   }
+  h_visible_area = h_width - h_margin * 2;
 
-  h_visible_area -= h_margin * 2;
-
-  v_visible_area = V_BUF_H * video_mode.div;
+  v_visible_area = vram.height() * video_mode.div;
   v_margin = ((int16_t)((video_mode.v_visible_area - v_visible_area) / (video_mode.div * 2) + 0.5))
       * video_mode.div;
-
   if (v_margin < 0)
     v_margin = 0;
 
@@ -404,27 +397,21 @@ void start_vga() {
     gpio_set_slew_rate(i, GPIO_SLEW_RATE_SLOW);
   }
 
-  // Allocate memory for the line template definitions - individual allocations.
-
-  // Line without a vertical sync pulse.
-  v_out_dma_buf[0] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
-  memset((uint8_t*)v_out_dma_buf[0], (kNoSync ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)v_out_dma_buf[0] + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity),
+  dma_buf[kDmaBufBlank] = (uint32_t*)malloc(whole_line);
+  memset(dma_buf[kDmaBufBlank], (kNoSync ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)dma_buf[kDmaBufBlank] + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity),
       h_sync_pulse);
 
-  // Vertical sync pulse.
-  v_out_dma_buf[1] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
-  memset((uint8_t*)v_out_dma_buf[1], (kVSync ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)v_out_dma_buf[1] + h_sync_pulse_front, (kVHSync ^ video_mode.sync_polarity),
+  dma_buf[kDmaBufVsync] = (uint32_t*)malloc(whole_line);
+  memset(dma_buf[kDmaBufVsync], (kVSync ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)dma_buf[kDmaBufVsync] + h_sync_pulse_front, (kVHSync ^ video_mode.sync_polarity),
       h_sync_pulse);
 
-  // Image line.
-  v_out_dma_buf[2] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
-  memcpy((uint8_t*)v_out_dma_buf[2], (uint8_t*)v_out_dma_buf[0], whole_line);
+  dma_buf[kDmaBufImageA] = (uint32_t*) malloc(whole_line);
+  memcpy(dma_buf[kDmaBufImageA], dma_buf[0], whole_line);
 
-  // Image line.
-  v_out_dma_buf[3] = (uint32_t*) calloc(whole_line / 4, sizeof(uint32_t));
-  memcpy((uint8_t*)v_out_dma_buf[3], (uint8_t*)v_out_dma_buf[0], whole_line);
+  dma_buf[kDmaBufImageB] = (uint32_t*) malloc(whole_line);
+  memcpy(dma_buf[kDmaBufImageB], dma_buf[0], whole_line);
 
   // PIO initialization.
   pio_sm_config c = pio_get_default_sm_config();
@@ -462,7 +449,7 @@ void start_vga() {
       dma_ch0,
       &c0,
       &PIO_VGA->txf[SM_VGA],  // Write address.
-      v_out_dma_buf[0],  // Read address.
+      dma_buf[kDmaBufBlank],  // Read address.
       whole_line / 4,
       false  // Don't start yet.
   );
@@ -479,7 +466,7 @@ void start_vga() {
       dma_ch1,
       &c1,
       &dma_hw->ch[dma_ch0].read_addr,  // Write address.
-      &v_out_dma_buf[0],  // Read address.
+      &dma_buf[kDmaBufBlank],  // Read address.
       1,
       false  // Don't start yet.
   );
@@ -510,6 +497,9 @@ int main() {
   sleep_ms(1000);  // Allow the USB UART to initialize for printf().
   printf("Started.\n");
 
+  Agat7Picture agat7_picture(agat7_renderer);
+  agat7_picture.DrawPicture(kVideoModeAgat7);
+
   switch (Config::kMode) {
     case Config::Mode::vga: {
       video_mode = kVideoModeVga640x480x60;
@@ -519,8 +509,6 @@ int main() {
     } break;
   };
 
-  Agat7Picture agat7_picture(agat7_renderer);
-  agat7_picture.DrawPicture(kVideoModeAgat7);
   start_vga();
   prepare_frame_buffer_lines();
 
