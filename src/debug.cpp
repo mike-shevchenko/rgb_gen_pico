@@ -142,6 +142,8 @@ void HandleAssertFailed(const char* complete_message) {
     case Config::Failure::log: {
       printf("*** ERROR *** (non-fatal)\n%s\n", complete_message);
       stdio_flush();
+      SetPanicLed(true);
+      // Return to the program execution.
     } break;
     case Config::Failure::panic: {
       panic("%s", complete_message);  // NOTE: panic() works unreliably with a complex fmt string.

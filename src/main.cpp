@@ -490,6 +490,7 @@ int main() {
   sleep_ms(1000);  // Allow the USB UART to initialize for printf().
   printf("Started.\n");
 
+  debug::SetBuiltInLed(false);  // Clear the assertion LED from the state before reset.
   Agat7Picture agat7_picture(agat7_renderer);
   agat7_picture.DrawPicture(kVideoModeAgat7);
 
