@@ -45,6 +45,7 @@ function(set_up_pico_target TARGET_NAME)
         ${CMAKE_CURRENT_LIST_DIR}/src/debug.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/nx/kit/utils.h
         ${CMAKE_CURRENT_LIST_DIR}/src/nx/kit/utils.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/span.h
         ${CMAKE_CURRENT_LIST_DIR}/src/video_mode.h
         ${CMAKE_CURRENT_LIST_DIR}/src/vram.h
         ${CMAKE_CURRENT_LIST_DIR}/src/vram.cpp

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <array>
-#include <span>
 #include <stdint.h>
 #include <string.h>
+
+#include "span.h"
 
 // Frame buffer representing a visible image of a retro computer.
 //
@@ -32,16 +32,23 @@ class Vram {
       kBrightYellow = kYellow | kBright,
       kBrightCyan = kCyan | kBright,
       kBrightWhite = kWhite | kBright,
+      kColorCount
   };
+  static_assert(kColorCount == 16);
 
   Vram(int width_px, int height);
 
-  int line_size_bytes() const { return width_px_ / 2; };
   int width_px() const { return width_px_; };
   int height() const { return height_; }
 
   void Clear(Color color = kBlack);
-  std::span<uint8_t> LineBytes(int y);
+  __force_inline Span<const uint8_t> LineBytes(int y) const {
+    return {buffer_[(ASSERT_CMP(y, >=, 0) && ASSERT_CMP(y, <, height_)) ? y : 0], width_px_ / 2};
+  }
+  __force_inline Span<uint8_t> LineBytes(int y) {
+    return std::as_const(*this).LineBytes(y).AsMutable();
+  }
+
   void SetPixel(int x, int y, Color color);
 
  private:

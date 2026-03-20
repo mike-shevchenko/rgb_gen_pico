@@ -148,8 +148,6 @@ void __not_in_flash_func(dma_handler_vga)()
 {
   static uint16_t y = 0; // VGA monitor line: 0..video_mode.whole_frame.
 
-  static uint8_t* scr_buffer = nullptr;
-
   dma_hw->ints0 = 1u << dma_ch1;
 
   y++;
@@ -157,7 +155,6 @@ void __not_in_flash_func(dma_handler_vga)()
   if (y == video_mode.whole_frame)
   {
     y = 0;
-    scr_buffer = vram.LineBytes(0).data();
   }
 
   if (y >= video_mode.v_visible_area && y < (video_mode.v_visible_area + video_mode.v_front_porch))
@@ -178,12 +175,6 @@ void __not_in_flash_func(dma_handler_vga)()
   {
     // vertical sync back porch
     dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
-    return;
-  }
-
-  if (!(scr_buffer))
-  {
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufImageA], false);
     return;
   }
 
@@ -311,10 +302,10 @@ void prepare_frame_buffer_lines() {
     memset(line_bytes + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity), h_sync_pulse);
 
     // Convert the frame buffer line through the palette.
-    const std::span<uint8_t> vram_line = vram.LineBytes(y);
+    const auto vram_line_bytes = vram.LineBytes(y);
     uint16_t* const line_buf = (uint16_t*)prepared_line_buffers[y];
-    for (size_t x = 0; x < vram_line.size(); ++x) {
-      line_buf[x] = palette[vram_line[x]];
+    for (int x = 0; x < vram_line_bytes.size(); ++x) {
+      line_buf[x] = palette[vram_line_bytes[x]];
     }
   }
 }
@@ -511,8 +502,8 @@ int main() {
     } break;
   };
 
-  start_vga();
   prepare_frame_buffer_lines();
+  start_vga();
 
   for (;;);
 }
