@@ -1,3 +1,4 @@
+#include <array>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@
 #include "agat7_picture.h"
 #include "agat7_renderer.h"
 #include "config.h"
+#include "debug.h"
 #include "video_mode.h"
 #include "vram.h"
 

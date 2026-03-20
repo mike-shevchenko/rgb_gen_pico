@@ -1,5 +1,6 @@
 // Agat-7 font data - 7x8 characters, ASCII 32-127.
 
+#include <array>
 #include <stdint.h>
 
 using Agat7Font = std::array<std::array<uint8_t, 8>, 96>;  // 8 lines, 96 chars.
