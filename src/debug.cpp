@@ -15,7 +15,6 @@
 #include <hardware/structs/sio.h>
 
 namespace debug {
-
 namespace detail {
 
 static constexpr int kDurationUnitMs = 75;  // 25 words per minute - a tribute to Nokia SMS.
@@ -127,6 +126,15 @@ std::string AssertionMessage(const char* fmt, va_list args) {
   return "\n  Message: " + nx::kit::utils::vformat(fmt, args);
 }
 
+void __no_inline_not_in_flash_func(PrintBriefAssertionFailureMessage)(
+    const char* const file_basename, int line) {
+  if (!file_basename || file_basename[0] == '\0') {
+    puts("\nEmpty __FILE__");  // Not much we can do here.
+    return;
+  }
+  printf("\nASSERT %s:%d\n", file_basename, line);
+}
+
 void HandleAssertFailed(const char* complete_message) {
   switch (Config::kFailure) {
     case Config::Failure::log: {
@@ -134,12 +142,13 @@ void HandleAssertFailed(const char* complete_message) {
       stdio_flush();
     } break;
     case Config::Failure::panic: {
-      panic("%s", complete_message);
+      panic("%s", complete_message);  // NOTE: panic() works unreliably with a complex fmt string.
     } break;
   }
 }
 
-bool AssertFailed(const char* condition_str, const char* file, int line, const char* fmt, ...) {
+bool __no_inline_not_in_flash_func(AssertFailed)(
+    const char* condition_str, const char* file, int line, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
   HandleAssertFailed(nx::kit::utils::format(
@@ -149,7 +158,8 @@ bool AssertFailed(const char* condition_str, const char* file, int line, const c
   return false;
 }
 
-bool AssertCmpFailed(const char* lhs_str, const char* op_str, const char* rhs_str,
+bool __no_inline_not_in_flash_func(AssertCmpFailed)(
+    const char* lhs_str, const char* op_str, const char* rhs_str,
     const char* lhs_val, const char* rhs_val, const char* file, int line, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
@@ -177,7 +187,7 @@ void SetBuiltInLed(bool is_on) {
   }
 }
 
-}  using namespace debug;
+} using namespace debug;
 
 extern "C" {
 
