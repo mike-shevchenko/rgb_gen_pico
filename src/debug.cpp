@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <optional>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -23,9 +24,18 @@ static constexpr int kDurationUnitMs = 75;  // 25 words per minute - a tribute t
 
 enum class Rp2040ZeroLedType{ kRgb, kGrb };
 
+std::optional<Rp2040ZeroLedType> Rp2040ZeroLedTypeFromConfig() {
+  switch (Config::kLed) {
+    case Config::Led::pico: return std::nullopt;
+    case Config::Led::rgb: return Rp2040ZeroLedType::kRgb;
+    case Config::Led::grb: return Rp2040ZeroLedType::kGrb;
+  }
+  return std::nullopt;  // Gives a warning.
+}
+
 // NOTE: Not using PIO because needs to work on panic.
 void __no_inline_not_in_flash_func(SetRp2040ZeroLed)(
-    uint8_t r, uint8_t g, uint8_t b, Rp2040ZeroLedType color_order) {
+    uint8_t r, uint8_t g, uint8_t b, Rp2040ZeroLedType led_type) {
   // Initialization - done on every call to avoid dependencies.
   static constexpr uint32_t kWs2812Gpio = 16;
   gpio_init(kWs2812Gpio);
@@ -39,15 +49,13 @@ void __no_inline_not_in_flash_func(SetRp2040ZeroLed)(
   busy_wait_us(300);  // Reset latch.
 
   uint32_t data = 0;
-  switch (color_order) {
+  switch (led_type) {
     case Rp2040ZeroLedType::kRgb: {
       data = ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8);
-      break;
-    }
+    } break;
     case Rp2040ZeroLedType::kGrb: {
       data = ((uint32_t)g << 24) | ((uint32_t)r << 16) | ((uint32_t)b << 8);
-      break;
-    }
+    } break;
   }
 
   const uint32_t interrupts = save_and_disable_interrupts();
@@ -71,23 +79,15 @@ void __no_inline_not_in_flash_func(SetRpiPicoLed)(bool is_on) {
   gpio_put(kLedGpio, is_on);
 }
 
-void __no_inline_not_in_flash_func(FlashPanicLedOnce)(int duration_units) {
-  switch (Config::kLed) {
-    case Config::Led::pico: {
-      SetRpiPicoLed(true);
-      busy_wait_ms(duration_units * kDurationUnitMs);
-      SetRpiPicoLed(false);
-    } break;
-    case Config::Led::rgb: {
-      SetRp2040ZeroLed(16, 0, 16, Rp2040ZeroLedType::kRgb);  // Magenta non-bright.
-      busy_wait_ms(duration_units * kDurationUnitMs);
-      SetRp2040ZeroLed(0, 0, 0, Rp2040ZeroLedType::kRgb);  // Off.
-    } break;
-    case Config::Led::grb: {
-      SetRp2040ZeroLed(16, 0, 16, Rp2040ZeroLedType::kGrb);  // Magenta non-bright.
-      busy_wait_ms(duration_units * kDurationUnitMs);
-      SetRp2040ZeroLed(0, 0, 0, Rp2040ZeroLedType::kGrb);  // Off.
-    } break;
+void __force_inline SetPanicLed(bool is_on) {
+  if (const std::optional<Rp2040ZeroLedType> led_type = Rp2040ZeroLedTypeFromConfig()) {
+    if (is_on) {
+      SetRp2040ZeroLed(16, 0, 16, *led_type);  // Magenta non-bright.
+    } else {
+      SetRp2040ZeroLed(0, 0, 0, *led_type);  // Off.
+    }
+  } else {
+    SetRpiPicoLed(is_on);
   }
 }
 
@@ -101,7 +101,9 @@ void __no_inline_not_in_flash_func(FlashPanicLedOnce)(int duration_units) {
 
   auto flash_and_wait = [](
       int flash_duration_units, int wait_duration_units) {
-    FlashPanicLedOnce(flash_duration_units);
+    SetPanicLed(true);
+    busy_wait_ms(flash_duration_units * kDurationUnitMs);
+    SetPanicLed(false);
     busy_wait_us(wait_duration_units * kDurationUnitMs * 1000);
   };
 
@@ -174,16 +176,14 @@ bool __no_inline_not_in_flash_func(AssertCmpFailed)(
 } using namespace detail;
 
 void SetBuiltInLed(bool is_on) {
-  switch (Config::kLed) {
-    case Config::Led::pico: {
-      SetRpiPicoLed(is_on);
-    } break;
-    case Config::Led::rgb: {
-      SetRp2040ZeroLed(0, 16, 0, Rp2040ZeroLedType::kRgb);  // Green non-bright.
-    } break;
-    case Config::Led::grb: {
-      SetRp2040ZeroLed(0, 16, 0, Rp2040ZeroLedType::kGrb);  // Green non-bright.
-    } break;
+  if (const std::optional<Rp2040ZeroLedType> led_type = Rp2040ZeroLedTypeFromConfig()) {
+    if (is_on) {
+      SetRp2040ZeroLed(0, 16, 0, *led_type);  // Green non-bright.
+    } else {
+      SetRp2040ZeroLed(0, 0, 0, *led_type);  // Off.
+    }
+  } else {
+    SetRpiPicoLed(is_on);
   }
 }
 
