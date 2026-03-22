@@ -41,13 +41,15 @@
 
 //-------------------------------------------------------------------------------------------------
 
-// Sync pulse patterns (positive polarity).
-constexpr uint8_t kNoSync = 0b00000000;
-constexpr uint8_t kVSync = 0b10000000;
-constexpr uint8_t kHSync = 0b01000000;
-constexpr uint8_t kVHSync = 0b11000000;
-constexpr uint8_t kSyncPolatiryMaskPositive = kNoSync;  // Invert no bits.
-constexpr uint8_t kSyncPolatiryMaskNegative = kVHSync;  // Invert both H and V sync bits.
+constexpr int kRedGpioShift = 0;
+constexpr int kGreenGpioShift = 2;
+constexpr int kBlueGpioShift = 4;
+constexpr uint8_t kNoSyncGpioByte = 0b00000000;
+constexpr uint8_t kVSyncGpioByte = 0b10000000;
+constexpr uint8_t kHSyncGpioByte = 0b01000000;
+constexpr uint8_t kVHSyncGpioByte = 0b11000000;
+constexpr uint8_t kSyncPolatiryMaskPositive = kNoSyncGpioByte;  // Invert no bits.
+constexpr uint8_t kSyncPolatiryMaskNegative = kVHSyncGpioByte;  // Invert both H and V sync bits.
 
 constexpr VideoMode kVideoModeVga640x480x60{
     .sys_freq = 252000,
@@ -111,28 +113,55 @@ static_assert(
     + kVideoModeAgat7.v_visible_area
     == kVideoModeAgat7.whole_frame);
 
-// PIO and SM for VGA.
-#define PIO_VGA pio0
-#define DREQ_PIO_VGA DREQ_PIO0_TX0
-#define SM_VGA 0
-
 static Vram vram(/*width_px=*/256, /*height=*/256);
 static Agat7Renderer agat7_renderer(vram);
 
 //-------------------------------------------------------------------------------------------------
-// VGA
+// Video output
 
-static int dma_ch0;
-static int dma_ch1;
-static uint offset;
+// For each two Vram pixels (1 byte), produces two bytes, each mapped to the video output GPIOs.
+class Palette {
+ public:
+  void Init(const VideoMode& video_mode) {
+    using enum Vram::Color;
+    const uint8_t sync_gpio_byte = kNoSyncGpioByte ^ video_mode.sync_polarity;
+    // TODO: Investigate the proper way to support the "bright black" option.
+    auto to_gpio_byte = [&video_mode, sync_gpio_byte](Vram::Color color) -> uint8_t {
+      const uint8_t value = 0b10 | ((color & kBright) != 0);
+      const uint8_t r = (color & kRed) ? value : 0;
+      const uint8_t g = (color & kGreen) ? value : 0;
+      const uint8_t b = (color & kBlue) ? value : 0;
+      return sync_gpio_byte |
+          (r << kRedGpioShift) | (g << kGreenGpioShift) | (b << kBlueGpioShift);
+    };
+    for (int hi = 0; hi < kColorCount; ++hi) {
+      const uint8_t hi_gpio_byte = to_gpio_byte(static_cast<Vram::Color>(hi));
+      for (int lo = 0; lo < kColorCount; ++lo) {
+        map_[hi * kColorCount + lo] =
+            (hi_gpio_byte << 8) | to_gpio_byte(static_cast<Vram::Color>(lo));
+      }
+    }
+  }
+
+  uint16_t operator[](uint8_t byte) const { return map_[byte]; }
+
+ private:
+  std::array<uint16_t, 256> map_;
+};
+
+static Palette palette;
 
 static VideoMode video_mode;
 
-// Position of Vram on the VGA video output, in VGA pixels.
-static int16_t h_visible_area;
-static int16_t h_margin;
-static int16_t v_visible_area;
-static int16_t v_margin;
+// Position of Vram insode the VGA visible rectangle.
+struct VgaParams {
+  int16_t h_visible_area;  // In Vram pixels; effectively is the Vram line length in pixels.
+  int16_t h_margin;  // In Vram pixels; left and right margins are the same.
+  int16_t v_visible_area;  // In VGA lines.
+  int16_t v_margin;  // In VGA lines; top and bottom margins are the same.
+};
+
+static VgaParams vga_params;
 
 // 4 buffers, each represents a full video-out line (with porches), including invisible lines.
 constexpr int kDmaBufBlank = 0;
@@ -141,8 +170,55 @@ constexpr int kDmaBufImageA = 2;
 constexpr int kDmaBufImageB = 3;
 static uint32_t* dma_buf[4];
 
-static uint16_t palette[256];
 uint32_t* prepared_line_buffers[256];  // One buffer per line.
+
+static int dma_ch0;
+static int dma_ch1;
+
+void __not_in_flash_func(convert_vram_line_to_vga_dma_buf)(
+    const VgaParams& vga_params, uint32_t* dma_buf, const Vram& vram, int vga_y) {
+  uint16_t* dma_buf_word_ptr = (uint16_t*)dma_buf;
+
+  // left margin
+  for (int x = vga_params.h_margin; x--;) {
+    *dma_buf_word_ptr++ = palette[0];
+  }
+
+  ASSERT_CMP(vga_y, >=, vga_params.v_margin);
+  const auto vram_line_bytes = vram.LineBytes((vga_y - vga_params.v_margin) / video_mode.div);
+
+// TODO: Investigate if the new safe C++-style algorithm lowers performance.
+#if 1  // Optimized unsafe C-style algorithm.
+  const uint8_t* vram_byte_ptr = &vram_line_bytes[0];
+  int x = 0;
+  while (x + 4 <= vga_params.h_visible_area) {
+    *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 0)];
+    *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 1)];
+    *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 2)];
+    *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 3)];
+    vram_byte_ptr += 4;
+    x += 4;
+  }
+  while (x < vga_params.h_visible_area) {
+    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
+    x++;
+  }
+#elif 0  // Safe naive algorithm using Span::operator[] - requires disabling the assertion in Span.
+  for (int x = 0; x < vga_params.h_visible_area; ++x) {
+    *dma_buf_word_ptr++ = palette[vram_line_bytes[x]];
+  }
+#else  // Safe C++-style algorithm using Span::CopyTo() - requires disabling the assertion in Span.
+  // TODO: Fix the assertion failure: h_visible_area is calculated incorrectly.
+  //ASSERT_CMP(h_visible_area, <=, vram_line_bytes.size());
+  vram_line_bytes.CopyTo(dma_buf_word_ptr, 0, vga_params.h_visible_area,
+    [](uint8_t byte) { return palette[byte]; });
+#endif
+
+  // right margin
+  for (int x = vga_params.h_margin; x--;) {
+    *dma_buf_word_ptr++ = palette[0];
+  }
+}
 
 void __not_in_flash_func(dma_handler_vga)()
 {
@@ -180,7 +256,7 @@ void __not_in_flash_func(dma_handler_vga)()
 
   // Top and bottom black bars when the vertical size of the image is smaller than the vertical
   // resolution of the screen.
-  if (y < v_margin || y >= (v_visible_area + v_margin))
+  if (y < vga_params.v_margin || y >= (vga_params.v_visible_area + vga_params.v_margin))
   {
     dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
     return;
@@ -217,7 +293,7 @@ void __not_in_flash_func(dma_handler_vga)()
     break;
   }
 
-  int active_buf_idx;
+  int active_buf_idx = -1;
 
   switch (line)
   {
@@ -249,48 +325,15 @@ void __not_in_flash_func(dma_handler_vga)()
     return;
   }
 
-  // Represents the line in the original captured image.
-  ASSERT_CMP(y, >=, v_margin);
-  const uint16_t scaled_y = (y - v_margin) / video_mode.div;
-
-  const uint8_t* vram_byte_ptr = vram.LineBytes(scaled_y).data();
-  uint16_t* dma_buf_word_ptr = (uint16_t*)dma_buf[active_buf_idx];
-
-  // left margin
-  for (int x = h_margin; x--;) {
-    *dma_buf_word_ptr++ = palette[0];
-  }
-
-  int x = 0;
-
-  while ((x + 4) <= h_visible_area)
-  {
-    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
-    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
-    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
-    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
-
-    x += 4;
-  }
-
-  while (x < h_visible_area)
-  {
-    *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
-    x++;
-  }
-
-  // right margin
-  for (int x = h_margin; x--;) {
-    *dma_buf_word_ptr++ = palette[0];
-  }
+  convert_vram_line_to_vga_dma_buf(vga_params, dma_buf[active_buf_idx], vram, y);
 
   dma_channel_set_read_addr(dma_ch1, &dma_buf[active_buf_idx], false);
 }
 
 void prepare_frame_buffer_lines() {
-  int whole_line = video_mode.whole_line / video_mode.div;
-  int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
-  int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
+  const int whole_line = video_mode.whole_line / video_mode.div;
+  const int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
+  const int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
 
   // Prepare all 256 lines (0..255) from the frame buffer.
   for (int y = 0; y < 256; y++) {
@@ -298,8 +341,8 @@ void prepare_frame_buffer_lines() {
     uint8_t* line_bytes = (uint8_t*)prepared_line_buffers[y];
 
     // Fill with the sync pattern.
-    memset(line_bytes, (kNoSync ^ video_mode.sync_polarity), whole_line);
-    memset(line_bytes + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity), h_sync_pulse);
+    memset(line_bytes, (kNoSyncGpioByte ^ video_mode.sync_polarity), whole_line);
+    memset(line_bytes + h_sync_pulse_front, (kHSyncGpioByte ^ video_mode.sync_polarity), h_sync_pulse);
 
     // Convert the frame buffer line through the palette.
     const auto vram_line_bytes = vram.LineBytes(y);
@@ -335,69 +378,75 @@ void __not_in_flash_func(dma_handler_agat7)() {
   }
 }
 
+VgaParams calc_vga_params() {
+  VgaParams r;
+  const uint16_t h_width = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 2;
+  constexpr int zx_spectrum_pixel_clock_mhz = 7'000'000;
+  constexpr int pal_visible_line_duration_us = 52;
+  r.h_margin =
+      (h_width - (uint8_t)zx_spectrum_pixel_clock_mhz * (pal_visible_line_duration_us / 2)) / 2;
+  if (r.h_margin < 0) {
+    r.h_margin = 0;
+  }
+  r.h_visible_area = h_width - r.h_margin * 2;
+
+  r.v_visible_area = vram.height() * video_mode.div;
+// TODO: Choose and test the proper way of calculating v_margin.
+#if 0  // Correct v_margin calculation for even numbers (it should be asserted).
+  r.v_margin = (video_mode.v_visible_area - r.v_visible_area) / video_mode.div;
+#else  // Old v_margin calculation; 0.5 seems redundant since all other operands are integers.
+  r.v_margin = (
+      (int16_t)((video_mode.v_visible_area - r.v_visible_area) / (video_mode.div * 2) + 0.5))
+      * video_mode.div;
+#endif
+  if (r.v_margin < 0) {
+    r.v_margin = 0;
+  }
+
+  printf("VgaParams{.h_visible_area = %d, .h_margin = %d, .v_visible_area = %d, .v_margin = %d}\n",
+      r.h_visible_area, r.h_margin, r.v_visible_area, r.v_margin);
+  return r;
+}
+
 void start_vga() {
   constexpr uint8_t kVgaGpioStart =
     (Config::kBoard == Config::Board::rgb2vga) ? 8 :
     (Config::kBoard == Config::Board::murmulator) ? 6 :
     printf/*compile-time error*/("Unexpected BOARD\n");
+  const PIO kRgbGenPio = pio0_hw;
+  constexpr uint kStateMachine = 0;
 
+  // DMA buffer structure:
+  // _____HHHHH_____XXXXX
+  //      ^h_sync_pulse_front
+  //      |<->|h_sync_pulse
+
+  // Width of a DMA buffer, in bytes - that is, in RGB output pixels.
   const int whole_line = video_mode.whole_line / video_mode.div;
+
   const int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
   const int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
 
-  const uint16_t h_width = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 2;
-  constexpr int zx_spectrum_pixel_clock_mhz = 7'000'000;
-  constexpr int pal_visible_line_duration_us = 52;
-  h_margin = (h_width - (uint8_t)zx_spectrum_pixel_clock_mhz * (pal_visible_line_duration_us / 2)) / 2;
-  if (h_margin < 0) {
-    h_margin = 0;
-  }
-  h_visible_area = h_width - h_margin * 2;
-
-  v_visible_area = vram.height() * video_mode.div;
-  v_margin = ((int16_t)((video_mode.v_visible_area - v_visible_area) / (video_mode.div * 2) + 0.5))
-      * video_mode.div;
-  if (v_margin < 0)
-    v_margin = 0;
+  vga_params = calc_vga_params();
 
   set_sys_clock_khz(video_mode.sys_freq, /*required=*/true);
   sleep_ms(10);
 
-  // Palette initialization.
-  // TODO: Investigate the proper way to output "bright black".
-  for (int i = 0; i < 16; ++i) {
-    uint8_t Yi = (i >> 3) & 1;
-    uint8_t Ri = ((i >> 2) & 1) ? (Yi ? 0b00000011 : 0b00000010) : 0;
-    uint8_t Gi = ((i >> 1) & 1) ? (Yi ? 0b00001100 : 0b00001000) : 0;
-    uint8_t Bi = ((i >> 0) & 1) ? (Yi ? 0b00110000 : 0b00100000) : 0;
-
-    for (int j = 0; j < 16; ++j) {
-      uint8_t Yj = (j >> 3) & 1;
-      uint8_t Rj = ((j >> 2) & 1) ? (Yj ? 0b00000011 : 0b00000010) : 0;
-      uint8_t Gj = ((j >> 1) & 1) ? (Yj ? 0b00001100 : 0b00001000) : 0;
-      uint8_t Bj = ((j >> 0) & 1) ? (Yj ? 0b00110000 : 0b00100000) : 0;
-
-      palette[(i * 16) + j] =
-          ((uint16_t)(Ri | Gi | Bi | (kNoSync ^ video_mode.sync_polarity)) << 8)
-          | (Rj | Gj | Bj | (kNoSync ^ video_mode.sync_polarity));
-    }
-  }
-
   // Set the VGA pins.
   for (int i = kVgaGpioStart; i < kVgaGpioStart + 8; ++i) {
-    pio_gpio_init(PIO_VGA, i);
+    pio_gpio_init(kRgbGenPio, i);
     gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_4MA);
     gpio_set_slew_rate(i, GPIO_SLEW_RATE_SLOW);
   }
 
   dma_buf[kDmaBufBlank] = (uint32_t*)malloc(whole_line);
-  memset(dma_buf[kDmaBufBlank], (kNoSync ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)dma_buf[kDmaBufBlank] + h_sync_pulse_front, (kHSync ^ video_mode.sync_polarity),
+  memset(dma_buf[kDmaBufBlank], (kNoSyncGpioByte ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)dma_buf[kDmaBufBlank] + h_sync_pulse_front, (kHSyncGpioByte ^ video_mode.sync_polarity),
       h_sync_pulse);
 
   dma_buf[kDmaBufVsync] = (uint32_t*)malloc(whole_line);
-  memset(dma_buf[kDmaBufVsync], (kVSync ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)dma_buf[kDmaBufVsync] + h_sync_pulse_front, (kVHSync ^ video_mode.sync_polarity),
+  memset(dma_buf[kDmaBufVsync], (kVSyncGpioByte ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)dma_buf[kDmaBufVsync] + h_sync_pulse_front, (kVHSyncGpioByte ^ video_mode.sync_polarity),
       h_sync_pulse);
 
   dma_buf[kDmaBufImageA] = (uint32_t*) malloc(whole_line);
@@ -410,11 +459,11 @@ void start_vga() {
   pio_sm_config c = pio_get_default_sm_config();
 
   // PIO program load.
-  offset = pio_add_program(PIO_VGA, &pio_vga_program);
-  sm_config_set_wrap(&c, offset, offset + (pio_vga_program.length - 1));
+  const int pio_program_offset = pio_add_program(kRgbGenPio, &pio_vga_program);
+  sm_config_set_wrap(&c, pio_program_offset, pio_program_offset + (pio_vga_program.length - 1));
 
   sm_config_set_out_pins(&c, kVgaGpioStart, 8);
-  pio_sm_set_consecutive_pindirs(PIO_VGA, SM_VGA, kVgaGpioStart, 8, true);
+  pio_sm_set_consecutive_pindirs(kRgbGenPio, kStateMachine, kVgaGpioStart, 8, true);
 
   sm_config_set_out_shift(&c, true, true, 32);
   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
@@ -422,8 +471,8 @@ void start_vga() {
   sm_config_set_clkdiv(&c,
       ((float)clock_get_hz(clk_sys) * video_mode.div) / video_mode.pixel_freq);
 
-  pio_sm_init(PIO_VGA, SM_VGA, offset, &c);
-  pio_sm_set_enabled(PIO_VGA, SM_VGA, true);
+  pio_sm_init(kRgbGenPio, kStateMachine, pio_program_offset, &c);
+  pio_sm_set_enabled(kRgbGenPio, kStateMachine, true);
 
   // DMA initialization.
   dma_ch0 = dma_claim_unused_channel(true);
@@ -435,13 +484,13 @@ void start_vga() {
   channel_config_set_transfer_data_size(&c0, DMA_SIZE_32);
   channel_config_set_read_increment(&c0, true);
   channel_config_set_write_increment(&c0, false);
-  channel_config_set_dreq(&c0, DREQ_PIO_VGA + SM_VGA);
+  channel_config_set_dreq(&c0, DREQ_PIO0_TX0 + kStateMachine);
   channel_config_set_chain_to(&c0, dma_ch1);  // Chain to the control channel.
 
   dma_channel_configure(
       dma_ch0,
       &c0,
-      &PIO_VGA->txf[SM_VGA],  // Write address.
+      &kRgbGenPio->txf[kStateMachine],  // Write address.
       dma_buf[kDmaBufBlank],  // Read address.
       whole_line / 4,
       false  // Don't start yet.
@@ -503,6 +552,7 @@ int main() {
     } break;
   };
 
+  palette.Init(video_mode);
   prepare_frame_buffer_lines();
   start_vga();
 
