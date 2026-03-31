@@ -120,12 +120,14 @@ NOTE: Such connection replicates the schematics of the RGB2VGA boards.
 #### DIN-7 for Agat (simplified):
 ```
 GND     --------------> GND (DIN-7.2)
-GP9 RH  ---[330]------> B (DIN-7.1)
-GP11 GH ---[330]------> G (DIN-7.6)
-GP13 BH ---[330]------> R (DIN-7.3)
-GP14 HS --------------> HS (DIN-7.5)
-GP15 VS --------------> VS (DIN-7.4)
+GP9 RH  ---[180]------> B (DIN-7.1)
+GP11 GH ---[180]------> G (DIN-7.6)
+GP13 BH ---[180]------> R (DIN-7.3)
+GP14 HS ---[220]------> HS (DIN-7.5)
+GP15 VS ---[220]------> VS (DIN-7.4)
 ```
+NOTE: This works both for 75-Ohm R, G, B input (like on 32VTC), and high-impedance input (like
+Yunost 404 with the "Conjunction Module" for Agat).
 
 #### DIN-7 for Agat (level-shifted):
 ```
