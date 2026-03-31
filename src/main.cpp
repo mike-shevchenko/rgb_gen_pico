@@ -53,7 +53,7 @@ constexpr uint8_t kSyncPolatiryMaskNegative = kVHSyncGpioByte;  // Invert both H
 
 constexpr VideoMode kVideoModeVga640x480x60{
     .sys_freq = 252'000,
-    .pixel_freq = 25'175'000.0,
+    .pixel_freq = 25'200'000.0,  // The VGA standard is 25.175, but we want to avoid jitter.
     .h_visible_area = 640,
     .v_visible_area = 480,
     .whole_line = 800,
