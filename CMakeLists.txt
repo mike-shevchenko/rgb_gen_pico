@@ -31,6 +31,9 @@ include(pico_sdk_import.cmake)
 
 project(rgb_gen_pico C CXX ASM)
 
+# TODO: Force the SDK to use the generic SPI flash boot2, and set the Flash clock divider to 4 for
+#     ~250 MHz stability.
+
 # Initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
 
