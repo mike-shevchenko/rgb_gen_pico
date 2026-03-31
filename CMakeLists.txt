@@ -92,6 +92,11 @@ function(set_up_pico_target TARGET_NAME)
 
     target_compile_definitions(${TARGET_NAME} PRIVATE
         PICO_PANIC_FUNCTION=CustomPanic
+        BOARD=rgb2vga
+        LED=grb
+        MODE=agat7
+        SYNC=neg
+        FAILURE=log
     )
 
     # Add linker flag to print memory usage
