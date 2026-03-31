@@ -55,7 +55,7 @@ class Vram {
   const int width_px_;
   const int height_;
 
-  static constexpr int kMaxLineCount = 320;  // Pentagon-128 holds the record.
+  static constexpr int kMaxLineCount = 304;  // Pentagon-128 holds the record.
   static constexpr int kMaxLinePixelCount = 640;  // ATM Turbo holds the record.
   static_assert(kMaxLinePixelCount % 2 == 0);
 
