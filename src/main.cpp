@@ -115,6 +115,39 @@ static_assert(
     + kVideoModeAgat7.v_visible_area
     == kVideoModeAgat7.whole_frame);
 
+constexpr VideoMode kVideoModePentagon128{
+    .sys_freq = 252'000,
+    .pixel_freq = 7'000'000.0,
+    .h_visible_area = /* left border */ 72 + 256 + /* right border */ 56,
+    .v_visible_area =
+        /* invisible top border */ 16 + /* top border */ 48 + 192 + /* bottom border */ 48,
+    .whole_line = /* hsync */ 64 + 72 + 256 + 56,
+    .whole_frame = /* vsync */ 16 + 16 + 48 + 192 + 48 /* = 320 */,
+    .h_front_porch = 16,  // TBD
+    .h_sync_pulse = 16,  // TBD
+    .h_back_porch = 32,  // TBD
+    .v_front_porch = 6,  // TBD
+    .v_sync_pulse = 4,  // TBD
+    .v_back_porch = 6,  // TBD
+    .sync_polarity =
+        (Config::kSync == Config::Sync::neg) ? kSyncPolatiryMaskNegative :
+        (Config::kSync == Config::Sync::pos) ? kSyncPolatiryMaskPositive :
+        printf/*compile-time error*/("Unexpected SYNC\n"),
+    .h_scale = 1,
+    .v_scale = 1,
+};
+static_assert(
+    kVideoModePentagon128.h_front_porch
+    + kVideoModePentagon128.h_sync_pulse
+    + kVideoModePentagon128.h_back_porch
+    + kVideoModePentagon128.h_visible_area
+    == kVideoModePentagon128.whole_line);
+static_assert(
+    kVideoModePentagon128.v_front_porch
+    + kVideoModePentagon128.v_sync_pulse
+    + kVideoModePentagon128.v_back_porch
+    + kVideoModePentagon128.v_visible_area
+    == kVideoModePentagon128.whole_frame);
 static Vram vram(/*width_px=*/256, /*height=*/256);
 static Agat7Renderer agat7_renderer(vram);
 
