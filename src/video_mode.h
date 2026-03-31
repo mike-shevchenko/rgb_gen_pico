@@ -16,5 +16,6 @@ struct VideoMode {
   uint8_t v_sync_pulse;  // Vertical sync pulse, in TV lines (64 us each).
   uint8_t v_back_porch;  // Vertical back porch, in TV lines (64 us each).
   uint8_t sync_polarity;  // Bit mask having 1 in positions to be inverted for a negative sync.
-  uint8_t div;  // Coefficient of scan-doubling/tripling/etc.
+  uint8_t h_scale;  // Horizontal scale factor for Vram pixels.
+  uint8_t v_scale;  // Vertical scale factor for Vram scandoubling.
 };

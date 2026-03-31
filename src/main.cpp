@@ -65,7 +65,8 @@ constexpr VideoMode kVideoModeVga640x480x60{
     .v_sync_pulse = 2,
     .v_back_porch = 33,
     .sync_polarity = kSyncPolatiryMaskNegative,
-    .div = 2,
+    .h_scale = 2,
+    .v_scale = 2,
 };
 
 // PAL/SECAM standard:
@@ -98,7 +99,8 @@ constexpr VideoMode kVideoModeAgat7{
         (Config::kSync == Config::Sync::neg) ? kSyncPolatiryMaskNegative :
         (Config::kSync == Config::Sync::pos) ? kSyncPolatiryMaskPositive :
         printf/*compile-time error*/("Unexpected SYNC\n"),
-    .div = 1,  // Scan-doubling is not used.
+    .h_scale = 1,
+    .v_scale = 1,
 };
 static_assert(
     kVideoModeAgat7.h_front_porch
@@ -168,9 +170,9 @@ constexpr int kDmaBufBlank = 0;
 constexpr int kDmaBufVsync = 1;
 constexpr int kDmaBufImageA = 2;
 constexpr int kDmaBufImageB = 3;
-static uint32_t* dma_buf[4];
+static uint32_t* dma_bufs[4];
 
-uint32_t* prepared_line_buffers[256];  // One buffer per line.
+static uint32_t* agat7_dma_bufs[256];  // One buffer per line.
 
 static int dma_ch0;
 static int dma_ch1;
@@ -179,166 +181,120 @@ void __not_in_flash_func(convert_vram_line_to_vga_dma_buf)(
     const VgaParams& vga_params, uint32_t* dma_buf, const Vram& vram, int vga_y) {
   uint16_t* dma_buf_word_ptr = (uint16_t*)dma_buf;
 
-  // left margin
-  for (int x = vga_params.h_margin; x--;) {
+  // Left margin.
+  for (int i = vga_params.h_margin / /* two pixels */ 2; i != 0; --i) {
     *dma_buf_word_ptr++ = palette[0];
   }
 
   ASSERT_CMP(vga_y, >=, vga_params.v_margin);
-  const auto vram_line_bytes = vram.LineBytes((vga_y - vga_params.v_margin) / video_mode.div);
+  const auto vram_line_bytes = vram.LineBytes((vga_y - vga_params.v_margin) / video_mode.v_scale);
 
-// TODO: Investigate if the new safe C++-style algorithm lowers performance.
+// TODO: Investigate whether the new safe C++-style algorithm lowers performance.
 #if 1  // Optimized unsafe C-style algorithm.
   const uint8_t* vram_byte_ptr = &vram_line_bytes[0];
-  int x = 0;
-  while (x + 4 <= vga_params.h_visible_area) {
+  int vram_x = 0;
+  while (vram_x + 8 <= vga_params.h_visible_area) {
     *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 0)];
     *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 1)];
     *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 2)];
     *dma_buf_word_ptr++ = palette[*(vram_byte_ptr + 3)];
     vram_byte_ptr += 4;
-    x += 4;
+    vram_x += 8;
   }
-  while (x < vga_params.h_visible_area) {
+  while (vram_x < vga_params.h_visible_area) {
     *dma_buf_word_ptr++ = palette[*vram_byte_ptr++];
-    x++;
+    vram_x += 4;
   }
 #elif 0  // Safe naive algorithm using Span::operator[] - requires disabling the assertion in Span.
-  for (int x = 0; x < vga_params.h_visible_area; ++x) {
-    *dma_buf_word_ptr++ = palette[vram_line_bytes[x]];
+  for (int vram_byte_idx = 0; vram_byte_idx < vga_params.h_visible_area / 2; ++vram_byte_idx) {
+    *dma_buf_word_ptr++ = palette[vram_line_bytes[vram_byte_idx]];
   }
 #else  // Safe C++-style algorithm using Span::CopyTo() - requires disabling the assertion in Span.
-  // TODO: Fix the assertion failure: h_visible_area is calculated incorrectly.
-  //ASSERT_CMP(h_visible_area, <=, vram_line_bytes.size());
+  // TODO: Investigate whether the assertion drops the performance.
+  //ASSERT_CMP(vga_params.h_visible_area, <=, vram_line_bytes.size());
   vram_line_bytes.CopyTo(dma_buf_word_ptr, 0, vga_params.h_visible_area,
     [](uint8_t byte) { return palette[byte]; });
 #endif
 
-  // right margin
-  for (int x = vga_params.h_margin; x--;) {
+  // Right margin.
+  for (int i = vga_params.h_margin / /* two pixels */ 2; i != 0; --i) {
     *dma_buf_word_ptr++ = palette[0];
   }
 }
 
-void __not_in_flash_func(dma_handler_vga)()
-{
-  static uint16_t y = 0; // VGA monitor line: 0..video_mode.whole_frame.
+void __not_in_flash_func(dma_handler_vga)() {
+  // VGA monitor line: 0..video_mode.whole_frame. Visible lines start at 0, vsync lines follow.
+  static uint16_t y = 0;
 
   dma_hw->ints0 = 1u << dma_ch1;
 
-  y++;
-
-  if (y == video_mode.whole_frame)
-  {
+  ++y;
+  if (y == video_mode.whole_frame) {
     y = 0;
   }
 
-  if (y >= video_mode.v_visible_area && y < (video_mode.v_visible_area + video_mode.v_front_porch))
-  {
+  if (y >= video_mode.v_visible_area
+      && y < (video_mode.v_visible_area + video_mode.v_front_porch)) {
     // vertical sync front porch
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufBlank], false);
     return;
   }
-  else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch)
-      && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse))
-  {
+  if (y >= (video_mode.v_visible_area + video_mode.v_front_porch)
+      && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)) {
     // vertical sync pulse
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufVsync], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufVsync], false);
     return;
   }
-  else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)
-      && y < video_mode.whole_frame)
-  {
+  if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)
+      && y < video_mode.whole_frame) {
     // vertical sync back porch
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
+    dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufBlank], false);
     return;
   }
 
   // Top and bottom black bars when the vertical size of the image is smaller than the vertical
   // resolution of the screen.
-  if (y < vga_params.v_margin || y >= (vga_params.v_visible_area + vga_params.v_margin))
-  {
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
+  if (y < vga_params.v_margin || y >= (vga_params.v_visible_area + vga_params.v_margin)) {
+    dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufBlank], false);
     return;
   }
 
   // Image area.
-  uint8_t line = y % (2 * video_mode.div);
-
-  switch (video_mode.div)
-  {
-  case 2:
-    if (line > 1)
-      line++;
-    break;
-
-  case 3:
-    if (line == 2 || line == 5)
-      line--;
-    break;
-
-  case 4:
-    if (line > 2)
-      line--;
-
-    if (line == 6)
-      line--;
-
-    if ((line == 2) || (line == 5))
-      line--;
-
-    break;
-
-  default:
-    break;
-  }
-
+  ASSERT_CMP(video_mode.v_scale, ==, 2);  // TODO: Support other scales.
   int active_buf_idx = -1;
-
-  switch (line)
-  {
-  case 0:
-    active_buf_idx = kDmaBufImageA;
-    break;
-
-  case 1:
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufImageA], false);
-    return;
-
-  case 2:
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
-    return;
-
-  case 3:
-    active_buf_idx = kDmaBufImageB;
-    break;
-
-  case 4:
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufImageB], false);
-    return;
-
-  case 5:
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);
-    return;
-
-  default:
-    return;
+  switch (y % 4) {
+    case 0: {
+      active_buf_idx = kDmaBufImageA;
+      break;
+    }
+    case 1: {
+      dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufImageA], false);
+      return;
+    };
+    case 2: {
+      active_buf_idx = kDmaBufImageB;
+      break;
+    }
+    case 3: {
+      dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufImageB], false);
+      return;
+    }
   }
 
-  convert_vram_line_to_vga_dma_buf(vga_params, dma_buf[active_buf_idx], vram, y);
-
-  dma_channel_set_read_addr(dma_ch1, &dma_buf[active_buf_idx], false);
+  convert_vram_line_to_vga_dma_buf(vga_params, dma_bufs[active_buf_idx], vram, y);
+  dma_channel_set_read_addr(dma_ch1, &dma_bufs[active_buf_idx], /*triogger=*/false);
 }
 
-void prepare_frame_buffer_lines() {
-  const int whole_line = video_mode.whole_line / video_mode.div;
-  const int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
-  const int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
+void prepare_agat7_dma_bufs() {
+  const int whole_line = video_mode.whole_line / video_mode.h_scale;
+  const int h_sync_pulse_front =
+      (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.h_scale;
+  const int h_sync_pulse = video_mode.h_sync_pulse / video_mode.h_scale;
 
   // Prepare all 256 lines (0..255) from the frame buffer.
   for (int y = 0; y < 256; y++) {
-    prepared_line_buffers[y] = (uint32_t*)calloc(whole_line / 4, sizeof(uint32_t));
-    uint8_t* line_bytes = (uint8_t*)prepared_line_buffers[y];
+    agat7_dma_bufs[y] = (uint32_t*)malloc(whole_line);
+    uint8_t* line_bytes = (uint8_t*)agat7_dma_bufs[y];
 
     // Fill with the sync pattern.
     memset(line_bytes, (kNoSyncGpioByte ^ video_mode.sync_polarity), whole_line);
@@ -346,7 +302,7 @@ void prepare_frame_buffer_lines() {
 
     // Convert the frame buffer line through the palette.
     const auto vram_line_bytes = vram.LineBytes(y);
-    uint16_t* const line_buf = (uint16_t*)prepared_line_buffers[y];
+    uint16_t* const line_buf = (uint16_t*)agat7_dma_bufs[y];
     for (int x = 0; x < vram_line_bytes.size(); ++x) {
       line_buf[x] = palette[vram_line_bytes[x]];
     }
@@ -363,42 +319,40 @@ void __not_in_flash_func(dma_handler_agat7)() {
   }
   if (y >= video_mode.v_visible_area
       && y < (video_mode.v_visible_area + video_mode.v_front_porch)) {
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);  // Start a V-front-porch.
+    dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufBlank], false);  // Start a V-front-porch.
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch)
       && y < (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)) {
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufVsync], false);  // Sstart a V-sync-pulse.
+    dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufVsync], false);  // Start a V-sync-pulse.
   }
   else if (y >= (video_mode.v_visible_area + video_mode.v_front_porch + video_mode.v_sync_pulse)
     && y < video_mode.whole_frame) {
-    dma_channel_set_read_addr(dma_ch1, &dma_buf[kDmaBufBlank], false);  // Strat a V-back-porch.
+    dma_channel_set_read_addr(dma_ch1, &dma_bufs[kDmaBufBlank], false);  // Start a V-back-porch.
   }
   else if (y < video_mode.v_visible_area) {
-    dma_channel_set_read_addr(dma_ch1, &prepared_line_buffers[y], false);  // Start a pixel line.
+    dma_channel_set_read_addr(dma_ch1, &agat7_dma_bufs[y], false);  // Start a pixel line.
   }
 }
 
-VgaParams calc_vga_params() {
-  VgaParams r;
-  const uint16_t h_width = (uint16_t)(video_mode.h_visible_area / (video_mode.div * 4)) * 2;
-  constexpr int zx_spectrum_pixel_clock_mhz = 7'000'000;
-  constexpr int pal_visible_line_duration_us = 52;
-  r.h_margin =
-      (h_width - (uint8_t)zx_spectrum_pixel_clock_mhz * (pal_visible_line_duration_us / 2)) / 2;
-  if (r.h_margin < 0) {
-    r.h_margin = 0;
-  }
-  r.h_visible_area = h_width - r.h_margin * 2;
+VgaParams calc_vga_params(const VideoMode& video_mode, const Vram& vram) {
+  ASSERT_CMP(vram.height(), % 2 ==, 0);
+  ASSERT_CMP(vram.width_px(), % 4 ==, 0);
+  ASSERT_CMP(video_mode.v_visible_area, % 2 ==, 0);
+  ASSERT_CMP(video_mode.v_visible_area, % video_mode.v_scale ==, 0);
+  ASSERT_CMP(video_mode.h_visible_area, % 2 ==, 0);
+  ASSERT_CMP(video_mode.h_visible_area, % video_mode.h_scale ==, 0);
+  ASSERT_CMP(vram.width_px() * video_mode.h_scale, <=, video_mode.h_visible_area);
 
-  r.v_visible_area = vram.height() * video_mode.div;
-// TODO: Choose and test the proper way of calculating v_margin.
-#if 0  // Correct v_margin calculation for even numbers (it should be asserted).
-  r.v_margin = (video_mode.v_visible_area - r.v_visible_area) / video_mode.div;
-#else  // Old v_margin calculation; 0.5 seems redundant since all other operands are integers.
-  r.v_margin = (
-      (int16_t)((video_mode.v_visible_area - r.v_visible_area) / (video_mode.div * 2) + 0.5))
-      * video_mode.div;
-#endif
+  VgaParams r;
+
+  r.h_visible_area = vram.width_px();
+  r.h_margin = (video_mode.h_visible_area / video_mode.h_scale - vram.width_px()) / 2;
+
+  r.v_visible_area = vram.height() * video_mode.v_scale;
+  if (r.v_visible_area > video_mode.v_visible_area) {  // Truncate the bottom part of the image.
+    r.v_visible_area = video_mode.v_visible_area;
+  }
+  r.v_margin = (video_mode.v_visible_area / video_mode.v_scale - vram.height()) / 2;
   if (r.v_margin < 0) {
     r.v_margin = 0;
   }
@@ -422,12 +376,16 @@ void start_vga() {
   //      |<->|h_sync_pulse
 
   // Width of a DMA buffer, in bytes - that is, in RGB output pixels.
-  const int whole_line = video_mode.whole_line / video_mode.div;
+  const int whole_line = video_mode.whole_line / video_mode.h_scale;
 
-  const int h_sync_pulse_front = (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.div;
-  const int h_sync_pulse = video_mode.h_sync_pulse / video_mode.div;
+  ASSERT(video_mode.h_visible_area % video_mode.h_scale == 0);
+  ASSERT(video_mode.h_front_porch % video_mode.h_scale == 0);
+  ASSERT(video_mode.h_sync_pulse % video_mode.h_scale == 0);
+  const int h_sync_pulse_front =
+      (video_mode.h_visible_area + video_mode.h_front_porch) / video_mode.h_scale;
+  const int h_sync_pulse = video_mode.h_sync_pulse / video_mode.h_scale;
 
-  vga_params = calc_vga_params();
+  vga_params = calc_vga_params(video_mode, vram);
 
   set_sys_clock_khz(video_mode.sys_freq, /*required=*/true);
   sleep_ms(10);
@@ -439,21 +397,21 @@ void start_vga() {
     gpio_set_slew_rate(i, GPIO_SLEW_RATE_SLOW);
   }
 
-  dma_buf[kDmaBufBlank] = (uint32_t*)malloc(whole_line);
-  memset(dma_buf[kDmaBufBlank], (kNoSyncGpioByte ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)dma_buf[kDmaBufBlank] + h_sync_pulse_front, (kHSyncGpioByte ^ video_mode.sync_polarity),
-      h_sync_pulse);
+  dma_bufs[kDmaBufBlank] = (uint32_t*)malloc(whole_line);
+  memset(dma_bufs[kDmaBufBlank], (kNoSyncGpioByte ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)dma_bufs[kDmaBufBlank] + h_sync_pulse_front,
+      (kHSyncGpioByte ^ video_mode.sync_polarity), h_sync_pulse);
 
-  dma_buf[kDmaBufVsync] = (uint32_t*)malloc(whole_line);
-  memset(dma_buf[kDmaBufVsync], (kVSyncGpioByte ^ video_mode.sync_polarity), whole_line);
-  memset((uint8_t*)dma_buf[kDmaBufVsync] + h_sync_pulse_front, (kVHSyncGpioByte ^ video_mode.sync_polarity),
-      h_sync_pulse);
+  dma_bufs[kDmaBufVsync] = (uint32_t*)malloc(whole_line);
+  memset(dma_bufs[kDmaBufVsync], (kVSyncGpioByte ^ video_mode.sync_polarity), whole_line);
+  memset((uint8_t*)dma_bufs[kDmaBufVsync] + h_sync_pulse_front,
+      (kVHSyncGpioByte ^ video_mode.sync_polarity), h_sync_pulse);
 
-  dma_buf[kDmaBufImageA] = (uint32_t*) malloc(whole_line);
-  memcpy(dma_buf[kDmaBufImageA], dma_buf[0], whole_line);
+  dma_bufs[kDmaBufImageA] = (uint32_t*) malloc(whole_line);
+  memcpy(dma_bufs[kDmaBufImageA], dma_bufs[0], whole_line);
 
-  dma_buf[kDmaBufImageB] = (uint32_t*) malloc(whole_line);
-  memcpy(dma_buf[kDmaBufImageB], dma_buf[0], whole_line);
+  dma_bufs[kDmaBufImageB] = (uint32_t*) malloc(whole_line);
+  memcpy(dma_bufs[kDmaBufImageB], dma_bufs[0], whole_line);
 
   // PIO initialization.
   pio_sm_config c = pio_get_default_sm_config();
@@ -469,7 +427,7 @@ void start_vga() {
   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 
   sm_config_set_clkdiv(&c,
-      ((float)clock_get_hz(clk_sys) * video_mode.div) / video_mode.pixel_freq);
+      ((float)clock_get_hz(clk_sys) * video_mode.h_scale) / video_mode.pixel_freq);
 
   pio_sm_init(kRgbGenPio, kStateMachine, pio_program_offset, &c);
   pio_sm_set_enabled(kRgbGenPio, kStateMachine, true);
@@ -491,7 +449,7 @@ void start_vga() {
       dma_ch0,
       &c0,
       &kRgbGenPio->txf[kStateMachine],  // Write address.
-      dma_buf[kDmaBufBlank],  // Read address.
+      dma_bufs[kDmaBufBlank],
       whole_line / 4,
       false  // Don't start yet.
   );
@@ -508,7 +466,7 @@ void start_vga() {
       dma_ch1,
       &c1,
       &dma_hw->ch[dma_ch0].read_addr,  // Write address.
-      &dma_buf[kDmaBufBlank],  // Read address.
+      &dma_bufs[kDmaBufBlank],  // Read address.
       1,
       false  // Don't start yet.
   );
@@ -553,7 +511,7 @@ int main() {
   };
 
   palette.Init(video_mode);
-  prepare_frame_buffer_lines();
+  prepare_agat7_dma_bufs();
   start_vga();
 
   for (;;);
