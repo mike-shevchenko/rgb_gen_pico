@@ -52,8 +52,8 @@ constexpr uint8_t kSyncPolatiryMaskPositive = kNoSyncGpioByte;  // Invert no bit
 constexpr uint8_t kSyncPolatiryMaskNegative = kVHSyncGpioByte;  // Invert both H and V sync bits.
 
 constexpr VideoMode kVideoModeVga640x480x60{
-    .sys_freq = 252000,
-    .pixel_freq = 25175000.0,
+    .sys_freq = 252'000,
+    .pixel_freq = 25'175'000.0,
     .h_visible_area = 640,
     .v_visible_area = 480,
     .whole_line = 800,
@@ -83,8 +83,8 @@ constexpr VideoMode kVideoModeVga640x480x60{
 //     layouts must be changed to allow adjusting this value, because currently the code can
 //     start the vsync pulse no earlier than the first visible pixel of a line.
 constexpr VideoMode kVideoModeAgat7{
-    .sys_freq = 252000,
-    .pixel_freq = 5250000.0,
+    .sys_freq = 252'000,
+    .pixel_freq = 5'250'000.0,
     .h_visible_area = 256,
     .v_visible_area = 256,
     .whole_line = 336,
@@ -313,7 +313,7 @@ void __not_in_flash_func(dma_handler_agat7)() {
   static uint16_t y = 0;
 
   dma_hw->ints0 = 1u << dma_ch1;
-  y++;
+  ++y;
   if (y == video_mode.whole_frame) {
     y = 0;
   }
@@ -359,11 +359,12 @@ VgaParams calc_vga_params(const VideoMode& video_mode, const Vram& vram) {
 
   printf("VgaParams{.h_visible_area = %d, .h_margin = %d, .v_visible_area = %d, .v_margin = %d}\n",
       r.h_visible_area, r.h_margin, r.v_visible_area, r.v_margin);
+
   return r;
 }
 
 void start_vga() {
-  constexpr uint8_t kVgaGpioStart =
+  constexpr uint8_t kRgbhvGpioStart =
     (Config::kBoard == Config::Board::rgb2vga) ? 8 :
     (Config::kBoard == Config::Board::murmulator) ? 6 :
     printf/*compile-time error*/("Unexpected BOARD\n");
@@ -391,7 +392,7 @@ void start_vga() {
   sleep_ms(10);
 
   // Set the VGA pins.
-  for (int i = kVgaGpioStart; i < kVgaGpioStart + 8; ++i) {
+  for (int i = kRgbhvGpioStart; i < kRgbhvGpioStart + 8; ++i) {
     pio_gpio_init(kRgbGenPio, i);
     gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_4MA);
     gpio_set_slew_rate(i, GPIO_SLEW_RATE_SLOW);
@@ -414,66 +415,67 @@ void start_vga() {
   memcpy(dma_bufs[kDmaBufImageB], dma_bufs[0], whole_line);
 
   // PIO initialization.
-  pio_sm_config c = pio_get_default_sm_config();
+  pio_sm_config state_machine_config = pio_get_default_sm_config();
 
   // PIO program load.
   const int pio_program_offset = pio_add_program(kRgbGenPio, &pio_vga_program);
-  sm_config_set_wrap(&c, pio_program_offset, pio_program_offset + (pio_vga_program.length - 1));
+  sm_config_set_wrap(&state_machine_config,
+      pio_program_offset, pio_program_offset + (pio_vga_program.length - 1));
 
-  sm_config_set_out_pins(&c, kVgaGpioStart, 8);
-  pio_sm_set_consecutive_pindirs(kRgbGenPio, kStateMachine, kVgaGpioStart, 8, true);
+  sm_config_set_out_pins(&state_machine_config, kRgbhvGpioStart, 8);
+  pio_sm_set_consecutive_pindirs(kRgbGenPio, kStateMachine, kRgbhvGpioStart, 8, true);
 
-  sm_config_set_out_shift(&c, true, true, 32);
-  sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+  sm_config_set_out_shift(&state_machine_config, true, true, 32);
+  sm_config_set_fifo_join(&state_machine_config, PIO_FIFO_JOIN_TX);
 
-  sm_config_set_clkdiv(&c,
+  // TODO: Investigate the formula.
+  sm_config_set_clkdiv(&state_machine_config,
       ((float)clock_get_hz(clk_sys) * video_mode.h_scale) / video_mode.pixel_freq);
 
-  pio_sm_init(kRgbGenPio, kStateMachine, pio_program_offset, &c);
-  pio_sm_set_enabled(kRgbGenPio, kStateMachine, true);
+  pio_sm_init(kRgbGenPio, kStateMachine, pio_program_offset, &state_machine_config);
+  pio_sm_set_enabled(kRgbGenPio, kStateMachine, /*enabled=*/true);
 
   // DMA initialization.
   dma_ch0 = dma_claim_unused_channel(true);
   dma_ch1 = dma_claim_unused_channel(true);
 
-  // The main (data) DMA channel.
-  dma_channel_config c0 = dma_channel_get_default_config(dma_ch0);
-
-  channel_config_set_transfer_data_size(&c0, DMA_SIZE_32);
-  channel_config_set_read_increment(&c0, true);
-  channel_config_set_write_increment(&c0, false);
-  channel_config_set_dreq(&c0, DREQ_PIO0_TX0 + kStateMachine);
-  channel_config_set_chain_to(&c0, dma_ch1);  // Chain to the control channel.
-
+  // DMA channel 0 - data.
+  dma_channel_config ch0_config = dma_channel_get_default_config(dma_ch0);
+  channel_config_set_transfer_data_size(&ch0_config, DMA_SIZE_32);
+  channel_config_set_read_increment(&ch0_config, true);
+  channel_config_set_write_increment(&ch0_config, false);
+  channel_config_set_dreq(&ch0_config, DREQ_PIO0_TX0 + kStateMachine);
+  // Set the DMA channel 1 to start when the DMA channel 0 completes.
+  channel_config_set_chain_to(&ch0_config, dma_ch1);
   dma_channel_configure(
       dma_ch0,
-      &c0,
-      &kRgbGenPio->txf[kStateMachine],  // Write address.
-      dma_bufs[kDmaBufBlank],
-      whole_line / 4,
-      false  // Don't start yet.
+      &ch0_config,
+      /*write_addr=*/&kRgbGenPio->txf[kStateMachine],
+      /*read_addr=*/dma_bufs[kDmaBufBlank],  // DMA will read data from the DMA buf.
+      /*encoded_transfer_count=*/whole_line / 4,
+      /*trigger=*/false  // Don't start yet.
   );
 
-  // Control DMA channel.
-  dma_channel_config c1 = dma_channel_get_default_config(dma_ch1);
-
-  channel_config_set_transfer_data_size(&c1, DMA_SIZE_32);
-  channel_config_set_read_increment(&c1, false);
-  channel_config_set_write_increment(&c1, false);
-  channel_config_set_chain_to(&c1, dma_ch0); // Chain to the other channel.
-
+  // DMA channel 1 - control.
+  dma_channel_config ch1_config = dma_channel_get_default_config(dma_ch1);
+  channel_config_set_transfer_data_size(&ch1_config, DMA_SIZE_32);
+  channel_config_set_read_increment(&ch1_config, false);
+  channel_config_set_write_increment(&ch1_config, false);
+  // Set the DMA channel 0 to start when the DMA channel 1 completes.
+  channel_config_set_chain_to(&ch1_config, dma_ch0);
   dma_channel_configure(
       dma_ch1,
-      &c1,
-      &dma_hw->ch[dma_ch0].read_addr,  // Write address.
-      &dma_bufs[kDmaBufBlank],  // Read address.
-      1,
-      false  // Don't start yet.
+      &ch1_config,
+      /*write_addr=*/&dma_hw->ch[dma_ch0].read_addr,  // DMA will set the read addr of channel 0.
+      /*read_addr=*/&dma_bufs[kDmaBufBlank],  // DMA will read the address of the DMA buf.
+      /*encoded_transfer_count=*/1,
+      /*trigger=*/false  // Don't start yet.
   );
 
-  dma_channel_set_irq0_enabled(dma_ch1, true);
+  // Set IRQ0 to trigger when the DMA channel 1 completes.
+  dma_channel_set_irq0_enabled(dma_ch1, /*enabled=*/true);
 
-  // Configure the processor to run the DMA handler when DMA IRQ 0 is asserted.
+  // Assign an IRQ0 handler - a callback that will be called when the DMA channel 1 completes.
   switch (Config::kMode) {
     case Config::Mode::vga: {
       irq_set_exclusive_handler(DMA_IRQ_0, dma_handler_vga);
@@ -484,7 +486,7 @@ void start_vga() {
   }
   irq_set_enabled(DMA_IRQ_0, /*enabled=*/true);
 
-  dma_start_channel_mask((1u << dma_ch0));
+  dma_start_channel_mask((1u << dma_ch0));  // Start DMA channel 1.
 }
 
 //-------------------------------------------------------------------------------------------------
